@@ -17,7 +17,7 @@ The plugin works roughly as follows (If one of these conditions is met, the foll
  * If a **glb (binary variant of gltf) model** is found among the file variants of an asset, the **three.js based viewer** is invoked with this file.
  * If a zip file with directory access (.unpack.zip) is found among the file variants and the version name (explicitly named so by the user) is "rti", the **Relight rti viewer** is invoked with this file, which should be in the relight format (with info.json, https://vcg.isti.cnr.it/relight/#format)
 
-## Viewer based on [3D Heritage Online Presenter (3DHOP)](http://vcg.isti.cnr.it/3dhop/index.php)
+## Viewer based on [3D Heritage Online Presenter (3DHOP)](https://3dhop.net/)
 
 Prerequisites:
 The plugin expects assets in the **Nexus (.nxs)** format (http://vcg.isti.cnr.it/nexus/). The nexus files could be compressed (.nxz). The Nexus file does not have to be the preferred version of an asset. For example, it is possible to store an additional file version in Nexus format for an asset in ply format.
