@@ -25288,6 +25288,8 @@ class Model extends EventEmitter {
     this.loaders = {};
     this.loaders.gltfLoader = new GLTFLoader();
     this.loaders.dracoLoader = new DRACOLoader();
+    this.loaders.dracoLoader.setDecoderPath("/draco/");
+    this.loaders.gltfLoader.setDRACOLoader(this.loaders.dracoLoader);
   }
   async startLoading() {
     const gltf = await this.loaders.gltfLoader.loadAsync(
@@ -27889,6 +27891,7 @@ class ControlsPanel {
     this.addHemisphereLightGui();
     this.addAutomaticZoomButton();
     this.addResetButton();
+    this.addLegend();
   }
   createGui() {
     this.gui = new GUI$1({ "title": "Steuerung" });
@@ -27928,6 +27931,16 @@ class ControlsPanel {
       }
     };
     this.gui.add(obj, "AutomaticZoom");
+  }
+  addLegend() {
+    this.legend = this.gui.addFolder("Legend");
+    this.legend.close();
+    let text = {
+      "Press Left Mouse": "Orbit around model",
+      "Press Right Mouse": "Move model"
+    };
+    this.legend.add(text, "Press Left Mouse").disable();
+    this.legend.add(text, "Press Right Mouse").disable();
   }
 }
 const defaultConfig = {
@@ -28034,14 +28047,14 @@ const defaultConfig = {
       "ambient": {
         "intensity": {
           "min": 0,
-          "max": 5,
+          "max": 25,
           "step": 0.01
         }
       },
       "hemisphere": {
         "intensity": {
           "min": 0,
-          "max": 50,
+          "max": 10,
           "step": 0.01
         }
       }
@@ -28060,6 +28073,7 @@ class UBHD3DViewer {
     this.assetUrl = assetUrl2 ? assetUrl2 : this.getURLSearchParams("asset");
     this.configFilePath = configFilePath2 ? configFilePath2 : this.getURLSearchParams("config");
     if (!this.requirementsFulfilled(this.assetUrl)) {
+      alert("The requirements for using this 3D viewers are not fulfilled. The asset URL is undefined. Please specify the path to the asset as URL parameter.");
       console.log("[UBHD3DViewer] Asset URL:", this.assetUrl);
       console.log("[UBHD3DViewer] Please specify the path to the asset as URL parameter.");
     } else {
