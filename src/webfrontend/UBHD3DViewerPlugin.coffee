@@ -1,79 +1,146 @@
 class UBHD3DViewerPlugin extends AssetDetail
+	__processVersion: (version, assetInfo) ->
+		# Nexus-Format
+		if version.class_extension in ['vector3d.nxs', 'vector3d.nxz']
+			assetInfo.type = 'nexus'
+			assetInfo.url = version?.url
+			assetInfo.extension = version?.extension
+			return true
+
+		# PLY-Format
+		if version.class_extension == 'vector3d.ply' and version.name == 'preview_version'
+			assetInfo.type = 'ply'
+			assetInfo.url = version.versions.original?.url
+			assetInfo.extension = version.versions.original?.extension
+			return true
+
+		# GLTF-ZIP-Format
+		if version.name == 'gltf' and version.class_extension == 'archive.unpack.zip'
+			assetInfo.type = 'gltf'
+			assetInfo.url = version.versions.directory?.url + '/model.gltf'
+			assetInfo.extension = version.versions.original?.extension
+			return true
+
+		# GLB-Format
+		if version.class_extension == 'vector3d.glb'
+			assetInfo.type = 'gltf'
+			assetInfo.url = version.versions.original?.url
+			assetInfo.extension = version.versions.original?.extension
+			return true
+
+		# RTI-ZIP-Format
+		if version.name == 'rti' and version.class_extension == 'archive.unpack.zip'
+			assetInfo.type = 'rti'
+			assetInfo.url = version.versions.directory?.url
+			assetInfo.extension = 'rti'
+			return true
+
+		# 3D Viewer JSON
+		if version.original_filename == '3D_viewer.json'
+			assetInfo.defaults = version.versions.original?.url
+			return false
+
+		return false
+
 	__easUrl: (asset) ->
-		#The object that will contain the 3dAsset info.
 		assetInfo =
 			type: null
 			url: null
 			extension: null
-			defaults: '' 
+			defaults: ''
 
-		if not asset
-			return assetInfo
+		return assetInfo unless asset
 
-		if asset instanceof Asset
-			#If asset is instance of the class Asset then we can get all the data about the versions of the file
-			# with getSiblingsFromData()
-			versions = asset.getSiblingsFromData()
-		else
-			#If asset is not instance of Asset then can be data about the asset retrieved by createMarkup()
-			versions = Object.values(asset)
+		versions = if asset instanceof Asset then asset.getSiblingsFromData() else Object.values(asset)
+		return assetInfo unless versions
 
-		if not versions
-			return assetInfo
+		for version in Object.values(versions[0].versions)
+			return assetInfo if @__processVersion(version, assetInfo)
 
-		#We iterate the versions of the asset searching a valid 3dModel.
-		for version in versions
-			# Viewer anbieten, wenn
-			# Version im Nexus-Format
-			if version.class_extension == 'vector3d.nxs' or version.class_extension == 'vector3d.nxz'
-				assetInfo.type = 'nexus'
-				if typeof version.versions.original?.url != 'undefined'
-					assetInfo.url = version.versions.original?.url
-					assetInfo.extension = version.versions.original?.extension
-				else
-					console.log('3d format not allowed')
-			else
-				# Viewer anbieten, wenn
-				# Version ply-Format mit Namen "preview_version" 
-				if version.class_extension == 'vector3d.ply' and version.name == 'preview_version'
-					assetInfo.type = 'ply'
-					if typeof version.versions.original?.url != 'undefined'
-						assetInfo.url = version.versions.original?.url
-						assetInfo.extension = version.versions.original?.extension
-					else
-						console.log('3d format not allowed')
-				else
-					# Viewer anbieten, wenn
-					# Version zip-unpack-Format mit Namen "gltf" (gltf-Datei benötigt dann festen Namen model.gltf innerhalb der zip-Datei)
-					if version.name == 'gltf' and version.class_extension == 'archive.unpack.zip'
-						assetInfo.type = 'gltf'
-						if typeof version.versions.original?.download_url != 'undefined'
-							assetInfo.url = version.versions.directory?.url
-							assetInfo.url += '/model.gltf'
-							assetInfo.extension = version.versions.original?.extension
-						else
-							console.log('3d format not allowed')
-					else
-						# Viewer anbieten, wenn
-						# Version im glb-Format
-						if version.class_extension == 'vector3d.glb'
-							assetInfo.type = 'gltf'
-							if typeof version.versions.original?.url != 'undefined'
-								assetInfo.url = version.versions.original?.url
-								assetInfo.extension = version.versions.original?.extension
-						else
-							# Viewer anbieten, wenn
-							# Version zip-unpack-Format mit Namen "rti"
-							if version.name == 'rti' and version.class_extension == 'archive.unpack.zip'
-								assetInfo.type = 'rti'
-								if typeof version.versions.directory?.url != 'undefined'
-									assetInfo.url = version.versions.directory?.url
-									assetInfo.extension = 'rti'
-								else
-									console.log('3d format rti: missing version directory')
-			if version.original_filename == '3D_viewer.json'
-				assetInfo.defaults = version.versions.original?.url
+		console.log("assetInfo", assetInfo)
 		return assetInfo
+	
+	# __easUrl: (asset) ->
+	# 	#The object that will contain the 3dAsset info.
+	# 	assetInfo =
+	# 		type: null
+	# 		url: null
+	# 		extension: null
+	# 		defaults: '' 
+
+	# 	if not asset
+	# 		return assetInfo
+
+	# 	if asset instanceof Asset
+	# 		#If asset is instance of the class Asset then we can get all the data about the versions of the file
+	# 		# with getSiblingsFromData()
+	# 		versions = asset.getSiblingsFromData()
+	# 	else
+	# 		#If asset is not instance of Asset then can be data about the asset retrieved by createMarkup()
+	# 		versions = Object.values(asset)
+
+	# 	if not versions
+	# 		return assetInfo
+		
+	# 	#We iterate the versions of the asset searching a valid 3dModel.
+	# 	console.log("versions", versions)
+	# 	for version in Object.values(versions[0].versions)
+	# 		console.log("asdf", version)
+	# 		# Viewer anbieten, wenn
+	# 		# Version im Nexus-Format
+	# 		if version.class_extension == 'vector3d.nxs' or version.class_extension == 'vector3d.nxz'
+	# 			console.log(version.versions)
+	# 			assetInfo.type = 'nexus'
+	# 			if typeof version?.url != 'undefined'
+	# 				assetInfo.url = version?.url
+	# 				assetInfo.extension = version?.extension
+	# 				#assetInfo.url = version.versions.original?.url
+	# 				#assetInfo.extension = version.versions.original?.extension
+	# 			else
+	# 				console.log('3d format not allowed')
+	# 		else
+	# 			# Viewer anbieten, wenn
+	# 			# Version ply-Format mit Namen "preview_version" 
+	# 			if version.class_extension == 'vector3d.ply' and version.name == 'preview_version'
+	# 				assetInfo.type = 'ply'
+	# 				if typeof version.versions.original?.url != 'undefined'
+	# 					assetInfo.url = version.versions.original?.url
+	# 					assetInfo.extension = version.versions.original?.extension
+	# 				else
+	# 					console.log('3d format not allowed')
+	# 			else
+	# 				# Viewer anbieten, wenn
+	# 				# Version zip-unpack-Format mit Namen "gltf" (gltf-Datei benötigt dann festen Namen model.gltf innerhalb der zip-Datei)
+	# 				if version.name == 'gltf' and version.class_extension == 'archive.unpack.zip'
+	# 					assetInfo.type = 'gltf'
+	# 					if typeof version.versions.original?.download_url != 'undefined'
+	# 						assetInfo.url = version.versions.directory?.url
+	# 						assetInfo.url += '/model.gltf'
+	# 						assetInfo.extension = version.versions.original?.extension
+	# 					else
+	# 						console.log('3d format not allowed')
+	# 				else
+	# 					# Viewer anbieten, wenn
+	# 					# Version im glb-Format
+	# 					if version.class_extension == 'vector3d.glb'
+	# 						assetInfo.type = 'gltf'
+	# 						if typeof version.versions.original?.url != 'undefined'
+	# 							assetInfo.url = version.versions.original?.url
+	# 							assetInfo.extension = version.versions.original?.extension
+	# 					else
+	# 						# Viewer anbieten, wenn
+	# 						# Version zip-unpack-Format mit Namen "rti"
+	# 						if version.name == 'rti' and version.class_extension == 'archive.unpack.zip'
+	# 							assetInfo.type = 'rti'
+	# 							if typeof version.versions.directory?.url != 'undefined'
+	# 								assetInfo.url = version.versions.directory?.url
+	# 								assetInfo.extension = 'rti'
+	# 							else
+	# 								console.log('3d format rti: missing version directory')
+	# 		if version.original_filename == '3D_viewer.json'
+	# 			assetInfo.defaults = version.versions.original?.url
+	# 	console.log("assetInfo", assetInfo)
+	# 	return assetInfo
 
 
 	getButtonLocaKey: (asset) ->
