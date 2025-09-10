@@ -1,14 +1,14 @@
 class UBHD3DViewerPlugin extends AssetDetail
-	__processVersion: (version, assetInfo) ->
+	__processVersion: (version, assetInfo) ->		
 		# Nexus-Format
-		if version.class_extension in ['vector3d.nxs', 'vector3d.nxz']
+		if version.extension in ['nxs', 'nxz']
 			assetInfo.type = 'nexus'
 			assetInfo.url = version?.url
 			assetInfo.extension = version?.extension
 			return true
 
 		# PLY-Format
-		if version.class_extension == 'vector3d.ply' and version.name == 'preview_version'
+		if version.extension == 'ply' and version.name == 'preview_version'
 			assetInfo.type = 'ply'
 			assetInfo.url = version.versions.original?.url
 			assetInfo.extension = version.versions.original?.extension
@@ -22,7 +22,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 			return true
 
 		# GLB-Format
-		if version.class_extension == 'vector3d.glb' and version.technical_metadata?.mime_type == 'model/gltf-binary'
+		if version.extension == 'glb' and version.technical_metadata?.mime_type == 'model/gltf-binary'
 			if version?.url? and version?.extension?
 				assetInfo.type = 'gltf'
 				assetInfo.url = version.url
@@ -31,7 +31,6 @@ class UBHD3DViewerPlugin extends AssetDetail
 			else
 				console.warn("GLB-Datei ohne gültige URL oder Extension", version)
 				return false
-
 
 		# RTI-ZIP-Format
 		if version.name == 'rti' and version.class_extension == 'archive.unpack.zip'
@@ -63,7 +62,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 			for version in Object.values(versions[0].versions)
 				return assetInfo if @__processVersion(version, assetInfo)
 
-		console.log("assetInfo", assetInfo)
+		console.log("__easUrl: assetInfo", assetInfo)
 		return assetInfo
 
 	getButtonLocaKey: (asset) ->
