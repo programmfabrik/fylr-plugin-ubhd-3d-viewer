@@ -1,25 +1,34 @@
 class UBHD3DViewerPlugin extends AssetDetail
-	__processVersion: (version, assetInfo) ->		
+	__processVersion: (version) ->		
 		# Nexus-Format
+		assetInfo = 
+			type: null
+			url: null
+			extension: null
+			prio: null
+			defaults: ''
+		
 		if version.extension in ['nxs', 'nxz']
 			assetInfo.type = 'nexus'
 			assetInfo.url = version?.url
 			assetInfo.extension = version?.extension
-			return true
+			assetInfo.prio = 5
+			return assetInfo
 
 		# PLY-Format
-		if version.extension == 'ply' and version.name == 'preview_version'
+		if version.extension == 'ply' #and version.name == 'preview_version'
 			assetInfo.type = 'ply'
-			assetInfo.url = version.versions.original?.url
-			assetInfo.extension = version.versions.original?.extension
-			return true
+			assetInfo.url = version?.url
+			assetInfo.extension = version?.extension
+			assetInfo.prio = 1
+			return assetInfo
 
 		# GLTF-ZIP-Format
 		if version.name == 'gltf' and version.class_extension == 'archive.unpack.zip'
 			assetInfo.type = 'gltf'
 			assetInfo.url = version.versions.directory?.url + '/model.gltf'
 			assetInfo.extension = version.versions.original?.extension
-			return true
+			return assetInfo
 
 		# GLB-Format
 		if version.extension == 'glb' and version.technical_metadata?.mime_type == 'model/gltf-binary'
@@ -27,22 +36,23 @@ class UBHD3DViewerPlugin extends AssetDetail
 				assetInfo.type = 'gltf'
 				assetInfo.url = version.url
 				assetInfo.extension = version.extension
-				return true
+				assetInfo.prio = 4
+				return assetInfo
 			else
 				console.warn("GLB-Datei ohne gültige URL oder Extension", version)
-				return false
+				return assetInfo
 
 		# RTI-ZIP-Format
 		if version.name == 'rti' and version.class_extension == 'archive.unpack.zip'
 			assetInfo.type = 'rti'
 			assetInfo.url = version.versions.directory?.url
 			assetInfo.extension = 'rti'
-			return true
+			return assetInfo
 
 		# 3D Viewer JSON
 		if version.original_filename == '3D_viewer.json'
 			assetInfo.defaults = version.versions.original?.url
-			return false
+			return assetInfo
 
 		return false
 
@@ -55,15 +65,31 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		return assetInfo unless asset
 
-		versions = if asset instanceof Asset then asset.getSiblingsFromData() else Object.values(asset)
-		return assetInfo unless versions
+		variants = if asset instanceof Asset then asset.getSiblingsFromData() else Object.values(asset)
+		return assetInfo unless variants
 
-		if versions.length > 0 and versions[0]?.versions?
-			for version in Object.values(versions[0].versions)
-				return assetInfo if @__processVersion(version, assetInfo)
+		candidates = []
+		for variant in variants
+			for version in Object.values(variant.versions)
+				assetInfo = @__processVersion(version)
+				candidates.push assetInfo if assetInfo.url
+				# return assetInfo if @__processVersion(version, assetInfo)
 
 		console.log("__easUrl: assetInfo", assetInfo)
+		console.log("__easUrl: candidates", candidates)
+		console.log("__easUrl: sortVariants", candidates.sort(sortVariants))
+
 		return assetInfo
+
+	sortVariants = (a, b) ->
+		if a.prio and b.prio
+			return b.prio - a.prio
+		else if a.prio
+			return -1
+		else if b.prio
+			return 1
+		else
+			return 0
 
 	getButtonLocaKey: (asset) ->
 		assetInfo = @__easUrl(asset)
