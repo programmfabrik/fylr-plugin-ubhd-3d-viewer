@@ -26,17 +26,21 @@ class UBHD3DViewerPlugin extends AssetDetail
 		# GLTF-ZIP-Format
 		if version.name == 'gltf' and version.class_extension == 'archive.unpack.zip'
 			assetInfo.type = 'gltf'
+			assetInfo.prio = 5
 			assetInfo.url = version.versions.directory?.url + '/model.gltf'
 			assetInfo.extension = version.versions.original?.extension
 			return assetInfo
 
 		# GLB-Format
-		if version.extension == 'glb' and version.technical_metadata?.mime_type == 'model/gltf-binary'
+		if (version.extension == 'glb' or version.extension == 'gltf') and version.technical_metadata?.mime_type == 'model/gltf-binary'
 			if version?.url? and version?.extension?
 				assetInfo.type = 'gltf'
 				assetInfo.url = version.url
 				assetInfo.extension = version.extension
-				assetInfo.prio = 4
+				if version.extension == 'glb'
+					assetInfo.prio = 4
+				else if version.extension == 'gltf'
+					assetInfo.prio = 3
 				return assetInfo
 			else
 				console.warn("GLB-Datei ohne gültige URL oder Extension", version)
@@ -45,13 +49,9 @@ class UBHD3DViewerPlugin extends AssetDetail
 		# RTI-ZIP-Format
 		if version.name == 'rti' and version.class_extension == 'archive.unpack.zip'
 			assetInfo.type = 'rti'
+			assetInfo.prio = 5
 			assetInfo.url = version.versions.directory?.url
 			assetInfo.extension = 'rti'
-			return assetInfo
-
-		# 3D Viewer JSON
-		if version.original_filename == '3D_viewer.json'
-			assetInfo.defaults = version.versions.original?.url
 			return assetInfo
 
 		return false
@@ -69,16 +69,24 @@ class UBHD3DViewerPlugin extends AssetDetail
 		return assetInfo unless variants
 
 		candidates = []
+		defaults = null
 		for variant in variants
 			for version in Object.values(variant.versions)
-				assetInfo = @__processVersion(version)
-				candidates.push assetInfo if assetInfo.url
-				# return assetInfo if @__processVersion(version, assetInfo)
+			# 3D Viewer JSON
+				if version.original_filename == '3D_viewer.json'
+					defaults = version.versions.original?.url
+				else 		
+					assetInfo = @__processVersion(version)
+					candidates.push assetInfo if assetInfo.url
 
 		console.log("__easUrl: assetInfo", assetInfo)
 		console.log("__easUrl: candidates", candidates)
 		console.log("__easUrl: sortVariants", candidates.sort(sortVariants))
 
+		if candidates.length > 0
+			assetInfo = candidates.sort(sortVariants)[0]
+			assetInfo.defaults = defaults if defaults
+			console.log("__easUrl: selected assetInfo", assetInfo)
 		return assetInfo
 
 	sortVariants = (a, b) ->
@@ -138,7 +146,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 				return
 
 		viewerDiv = CUI.dom.element("div", id: "ubhd3d")
-		plugin = ez5.pluginManager.getPlugin("easydb-ubhd-3d-viewer-plugin")
+		plugin = ez5.pluginManager.getPlugin("fylr-plugin-ubhd-3d-viewer")
 		pluginStaticUrl = plugin.getBaseURL()
 		if assetInfo.type == 'nexus' or assetInfo.type == 'ply'
 			# 3DHOP-Viewer
@@ -184,4 +192,4 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 ez5.session_ready =>
 	AssetBrowser.plugins.registerPlugin(UBHD3DViewerPlugin)
-	ez5.pluginManager.getPlugin("easydb-ubhd-3d-viewer-plugin").loadCss()
+	ez5.pluginManager.getPlugin("fylr-plugin-ubhd-3d-viewer").loadCss()

@@ -1,7 +1,7 @@
 plugin:
-  name: easydb-ubhd-3d-viewer-plugin
-  version: 1.1
-  url: https://github.com/programmfabrik/easydb-ubhd-3d-viewer-plugin
+  name: fylr-plugin-ubhd-3d-viewer
+  version: 0.1
+  url: https://github.com/programmfabrik/fylr-plugin-ubhd-3d-viewer
   displayname:
     de-DE: 3D-Viewer Plugin
     en-US: 3D-Viewer Plugin
@@ -9,7 +9,7 @@ plugin:
     de-DE: "3D-Viewer basierend auf 3DHOP und three.js"
     en-US: "3D viewer based on 3DHOP and three.js"
   webfrontend:
-    url: easydb-ubhd-3d-viewer-plugin.js
-    l10n: l10n/
-    css: easydb-ubhd-3d-viewer-plugin.css
-
+    url: fylr-plugin-ubhd-3d-viewer.js
+    css: fylr-plugin-ubhd-3d-viewer.css
+  l10n: l10n/fylr-plugin-ubhd-3d-viewer.csv
+base_url_prefix: "webfrontend"
