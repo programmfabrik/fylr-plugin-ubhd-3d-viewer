@@ -4,7 +4,7 @@ Programmfabrik GmbH. Please use the github issue tracking to report bugs
 and self organize bug fixing. Feel free to directly contact the committing
 developers.
 
-# easydb-ubhd-3d-viewer-plugin
+# fylr-plugin-ubhd-3d-viewer
 3D viewer plugin (Heidelberg University Library)
 
 **At the moment, this plugin is only a prototype!!!**
@@ -38,7 +38,8 @@ zip file in Relight format (see https://vcg.isti.cnr.it/relight/#format)
 
 ## TODOs
 ### Common
- * [ ] adaption to fylr
+ * [x] adaption to fylr
+ * [ ] suitable recips plugins for generating glb or Nexus format (and 2D preview)
 
 ### three.js based viewer
  * [x] add controls
