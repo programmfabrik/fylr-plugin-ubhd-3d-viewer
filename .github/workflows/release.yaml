@@ -11,11 +11,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Fix post run npm cleanup
-        run: mkdir -p /home/runner/.npm; touch /home/runner/package-lock.json
+        run: mkdir -p /home/runner/.npm; touch /home/runner/package-lock.json; touch package-lock.json
         continue-on-error: true
 
       - uses: actions/setup-node@v3
