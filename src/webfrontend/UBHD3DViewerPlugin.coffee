@@ -157,7 +157,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 				id: "ubhd3diframe",
 				"frameborder": "0",
 				"scrolling": "no",
-				"src": pluginStaticUrl+"/3dhopiframe.html?nexus="+isNexus+"&asset="+assetInfo.url
+				"src": pluginStaticUrl+"/3dhopiframe.html?nexus="+isNexus+"&asset="+encodeURIComponent assetInfo.url
 			});
 		else
 			if assetInfo.type == 'rti'
@@ -167,7 +167,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 					"frameborder": "0",
 					"scrolling": "no",
 					"style": "width: 100%; height: 100%;",
-					"src": pluginStaticUrl+"/rtiiframe.html?asset="+assetInfo.url
+					"src": pluginStaticUrl+"/rtiiframe.html?asset="+encodeURIComponent assetInfo.url
 				});
 			else
 				# three.js-basierter Viewer
@@ -176,14 +176,16 @@ class UBHD3DViewerPlugin extends AssetDetail
 						id: "threeiframe",
 						"frameborder": "0",
 						"scrolling": "no",
-						"src": pluginStaticUrl+"/threeiframe.html?asset="+assetInfo.url+"."+assetInfo.extension+"&config="+assetInfo.defaults
+						#"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url+"."+encodeURIComponent assetInfo.extension+"&config="+encodeURIComponent assetInfo.defaults
+						"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url+"&config="+encodeURIComponent assetInfo.defaults
 					});
 				else
 					iframe = CUI.dom.element("iframe", {
 						id: "threeiframe",
 						"frameborder": "0",
 						"scrolling": "no",
-						"src": pluginStaticUrl+"/threeiframe.html?asset="+assetInfo.url+"."+assetInfo.extension
+						#"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url+"."+encodeURIComponent assetInfo.extension
+						"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url
 					});
 
 		viewerDiv.appendChild(iframe)
