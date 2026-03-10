@@ -83,10 +83,16 @@
     }
     
     $(document).ready(function(){
-            var isNexus = window.location.search.substr(7,1)
-            var asseturl = window.location.search.substring(15);
-            init3dhop();
-            setup3dhop(isNexus,asseturl);
+        var params = new URLSearchParams(window.location.search);
+        var isNexus = params.get('nexus') === '1' ? 1 : 0;
+        var asseturl = params.get('asset') || '';
+        try {
+          asseturl = decodeURIComponent(asseturl);
+        } catch (e) {
+          console.warn('3DHOP iframe: failed to decode asset URL', asseturl, e);
+        }
+        init3dhop();
+        setup3dhop(isNexus,asseturl);
     })
   </script>
 </head>
