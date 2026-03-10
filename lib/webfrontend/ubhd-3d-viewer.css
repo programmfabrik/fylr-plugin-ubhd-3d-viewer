@@ -1,35 +1,197 @@
-body {
-    /* remove margins and scroll bars */
+*
+{
     margin: 0;
+    padding: 0;
+}
+
+html,
+body
+{
     overflow: hidden;
-    
-    /* style text */
-    text-align: center;
-    font-size: 12px;
-    font-family: Sans-Serif;
-    
-    /* color text */
-    color: #444;
 }
 
-h1 {
-    /* position the heading */
-    position: absolute;
-    width: 100%;
-    
-    /* make sure that the heading is drawn on top */
-    z-index: 1;
+.webgl
+{
+    position: fixed;
+    top: 0;
+    left: 0;
+    outline: none;
 }
 
-#scene-container {
-    /* tell our scene container to take up the full page */
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    
-    /*
-        Set the container's background color to the same as the scene's
-        background to prevent flashing on load
-    */
-    background-color: white;
+/* Legend overlay styles */
+.ubhd-legend {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 8; /* below preview overlay which uses 9 */
+    /* Semitransparent tile/card look */
+    background: rgba(18, 18, 22, 0.68);
+    color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    padding: 8px 12px;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.35;
+    border: 1px solid rgba(255,255,255,0.08);
+    /* Important to prevent inner content or background from showing square corners */
+    overflow: hidden;
+    background-clip: padding-box;
+    -webkit-background-clip: padding-box;
+    /* Optional: subtle backdrop to soften content behind rounded corners */
+    backdrop-filter: blur(8px) saturate(120%);
+}
+
+.ubhd-legend .legend-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #f0f0f0;
+    opacity: 0.95;
+}
+
+.ubhd-legend .legend-row {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    margin: 2px 0;
+}
+
+.ubhd-legend .legend-key {
+    min-width: 10.5ch;
+    color: #ffd27d;
+}
+
+.ubhd-legend .legend-desc {
+    color: #ffffff;
+    opacity: 0.95;
+}
+
+/* Size variants */
+.ubhd-legend.size-small { font-size: 12px; padding: 6px 8px; }
+.ubhd-legend.size-medium { font-size: 14px; padding: 8px 12px; }
+.ubhd-legend.size-large { font-size: 16px; padding: 10px 14px; }
+
+@media (max-width: 480px) {
+    .ubhd-legend { left: 8px; right: 8px; bottom: 8px; }
+}
+
+/* Status HUD */
+#ubhd-3d-status.ubhd-status {
+    position: fixed;
+    top: 12px;
+    left: 16px;
+    z-index: 11;
+    background: rgba(20, 20, 24, 0.72);
+    color: #f3f3f5;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.3;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+    backdrop-filter: blur(8px) saturate(115%);
+    pointer-events: none;
+}
+
+#ubhd-3d-status[data-level="warn"] { border-color: rgba(255, 204, 128, 0.6); color: #ffe1ad; }
+#ubhd-3d-status[data-level="error"] { border-color: rgba(255, 128, 128, 0.6); color: #ffb3b3; }
+#ubhd-3d-status[data-level="ok"] { border-color: rgba(125, 185, 255, 0.6); color: #d5e7ff; }
+
+/* Top progress bar (visible during model load) */
+.ubhd-progress { box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+.ubhd-progress .ubhd-progress-bar { background: #2e7d32; }
+
+/* lil-gui theming */
+.lil-gui.ubhd-gui {
+    /* Semitransparent tile/card variables */
+    --gui-bg: rgba(20, 20, 24, 0.72);
+    --gui-fg: #f3f3f5;
+    --gui-muted: #b9bbbe;
+    --gui-accent: #7db9ff;
+    --gui-accent-2: #ffd27d;
+    --gui-border: rgba(255,255,255,0.10);
+    --gui-hover: rgba(255,255,255,0.06);
+    --gui-focus: rgba(125,185,255,0.35);
+
+    position: fixed;
+    top: 16px;
+    right: 16px;
+}
+
+.lil-gui.ubhd-gui .title {
+    /* Title uses same tile look; keep subtle separation via border */
+    background: transparent;
+    color: var(--gui-fg);
+    font-weight: 600;
+    border-bottom: 1px solid var(--gui-border);
+}
+
+.lil-gui.ubhd-gui.root {
+    background: var(--gui-bg);
+    color: var(--gui-fg);
+    border: 1px solid var(--gui-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+    backdrop-filter: blur(8px) saturate(115%);
+    /* Clip inner sections to rounded corners so no square edges peek out */
+    overflow: hidden;
+    background-clip: padding-box;
+    -webkit-background-clip: padding-box;
+}
+
+.lil-gui.ubhd-gui .children {
+    /* Remove solid backgrounds that might create square edges */
+    background: transparent !important;
+}
+
+.lil-gui.ubhd-gui .controller {
+    border-top: 1px solid var(--gui-border);
+    background: transparent;
+}
+
+.lil-gui.ubhd-gui .title {
+    /* Round top corners of the title bar to match the root radius */
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+.lil-gui.ubhd-gui .controller {
+    border-top: 1px solid var(--gui-border);
+}
+
+.lil-gui.ubhd-gui .controller:hover {
+    background: var(--gui-hover);
+}
+
+.lil-gui.ubhd-gui .name {
+    color: var(--gui-muted);
+}
+
+.lil-gui.ubhd-gui .boolean .widget input[type="checkbox"]:focus-visible,
+.lil-gui.ubhd-gui .slider .fill,
+.lil-gui.ubhd-gui .slider input[type="range"]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--gui-focus);
+}
+
+.lil-gui.ubhd-gui .slider .fill {
+    background: linear-gradient(90deg, var(--gui-accent), var(--gui-accent-2));
+}
+
+.lil-gui.ubhd-gui .widget select,
+.lil-gui.ubhd-gui .widget input[type="number"],
+.lil-gui.ubhd-gui .widget input[type="text"] {
+    background: rgba(255,255,255,0.06);
+    color: var(--gui-fg);
+    border: 1px solid var(--gui-border);
+}
+
+.lil-gui.ubhd-gui .button {
+    background: rgba(125,185,255,0.12);
+    color: var(--gui-fg);
+    border: 1px solid var(--gui-border);
+}
+
+.lil-gui.ubhd-gui .button:hover {
+    background: rgba(125,185,255,0.2);
 }
