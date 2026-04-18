@@ -39,7 +39,7 @@ zip file in Relight format (see https://vcg.isti.cnr.it/relight/#format)
 ## TODOs
 ### Common
  * [x] adaption to fylr
- * [ ] suitable recips plugins for generating glb or Nexus format (and 2D preview)
+ * [ ] suitable recips plugins for generating glb or Nexus format (and preview)
 
 ### three.js based viewer
  * [x] add controls

@@ -1,4 +1,85 @@
 class UBHD3DViewerPlugin extends AssetDetail
+	__probeUrlStatus: (url) ->
+		new Promise (resolve) ->
+			return resolve(null) unless url
+			try
+				if window.fetch?
+					headOpts = { method: 'HEAD', cache: 'no-store', credentials: 'include' }
+					getOpts = { method: 'GET', cache: 'no-store', credentials: 'include', headers: { 'Range': 'bytes=0-0' } }
+					fetch(url, headOpts).then((res) ->
+						status = res.status
+						# If HEAD is not allowed/usable, retry with a minimal GET.
+						if status == 405 or status == 501
+							fetch(url, getOpts).then((r2) -> resolve(r2.status)).catch((_) -> resolve(null))
+						else
+							resolve(status)
+					).catch((_) ->
+						# Some endpoints may not allow HEAD; retry with minimal GET.
+						fetch(url, getOpts).then((r2) -> resolve(r2.status)).catch((__) -> resolve(null))
+					)
+					return
+				if window.$?.ajax?
+					$.ajax({ url: url, type: 'HEAD', cache: false, xhrFields: { withCredentials: true } }).done((_) ->
+						resolve(200)
+					).fail((xhr, _status, _err) ->
+						st = xhr?.status ? null
+						# jQuery cannot set Range easily for HEAD fallback here; return unknown.
+						resolve(st)
+					)
+					return
+			catch err
+				# ignore
+			resolve(null)
+
+	__pickFirstAccessible: (assetInfos) ->
+		new Promise (resolve) =>
+			candidates = (assetInfos or []).filter((x) -> x?.url)
+			return resolve(null) unless candidates.length
+			unknown = []
+
+			idx = 0
+			checkNext = =>
+				# If we couldn't determine any status, prefer the first unknown candidate.
+				if idx >= candidates.length
+					return resolve(unknown[0] ? candidates[0])
+				candidate = candidates[idx]
+				idx += 1
+				@__probeUrlStatus(candidate.url).then((status) =>
+					if typeof status == 'number' and status >= 200 and status < 400
+						resolve(candidate)
+					else if status == 403
+						checkNext()
+					else if status == 404
+						checkNext()
+					else if status == 0
+						checkNext()
+					else if status?
+						checkNext()
+					else
+						unknown.push(candidate)
+						checkNext()
+				).catch((_) =>
+					unknown.push(candidate)
+					checkNext()
+				)
+
+			checkNext()
+
+	__bestVersionUrl: (version) ->
+		return null unless version
+		return version.versions?.original?.url if version.versions?.original?.url
+		return version?.url
+
+	__sameOriginUrl: (rawUrl) ->
+		return rawUrl unless rawUrl
+		try
+			u = new URL(rawUrl, window.location.href)
+			if u.origin != window.location.origin
+				return u.pathname + u.search + u.hash
+			return u.href
+		catch err
+			return rawUrl
+
 	__processVersion: (version) ->		
 		# Nexus-Format
 		assetInfo = 
@@ -10,15 +91,15 @@ class UBHD3DViewerPlugin extends AssetDetail
 		
 		if version.extension in ['nxs', 'nxz']
 			assetInfo.type = 'nexus'
-			assetInfo.url = version?.url
+			assetInfo.url = @__bestVersionUrl(version)
 			assetInfo.extension = version?.extension
-			assetInfo.prio = 5
+			assetInfo.prio = 4
 			return assetInfo
 
 		# PLY-Format
 		if version.extension == 'ply' #and version.name == 'preview_version'
 			assetInfo.type = 'ply'
-			assetInfo.url = version?.url
+			assetInfo.url = @__bestVersionUrl(version)
 			assetInfo.extension = version?.extension
 			assetInfo.prio = 1
 			return assetInfo
@@ -31,14 +112,25 @@ class UBHD3DViewerPlugin extends AssetDetail
 			assetInfo.extension = version.versions.original?.extension
 			return assetInfo
 
+		# OBJ-Format (Fallback, falls abgeleitete GLBs nicht zugreifbar sind)
+		if version.extension == 'obj'
+			url = @__bestVersionUrl(version)
+			if url?
+				assetInfo.type = 'obj'
+				assetInfo.url = url
+				assetInfo.extension = version.extension
+				assetInfo.prio = 2
+				return assetInfo
+
 		# GLB-Format
 		if (version.extension == 'glb' or version.extension == 'gltf') and version.technical_metadata?.mime_type == 'model/gltf-binary'
-			if version?.url? and version?.extension?
+			url = @__bestVersionUrl(version)
+			if url? and version?.extension?
 				assetInfo.type = 'gltf'
-				assetInfo.url = version.url
+				assetInfo.url = url
 				assetInfo.extension = version.extension
 				if version.extension == 'glb'
-					assetInfo.prio = 4
+					assetInfo.prio = 5
 				else if version.extension == 'gltf'
 					assetInfo.prio = 3
 				return assetInfo
@@ -62,6 +154,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 			url: null
 			extension: null
 			defaults: ''
+			alternatives: []
 
 		return assetInfo unless asset
 
@@ -70,6 +163,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		candidates = []
 		defaults = null
+		hasTypeWithoutUrl = false
 		for variant in variants
 			for version in Object.values(variant.versions)
 			# 3D Viewer JSON
@@ -77,16 +171,27 @@ class UBHD3DViewerPlugin extends AssetDetail
 					defaults = version.versions.original?.url
 				else 		
 					assetInfo = @__processVersion(version)
-					candidates.push assetInfo if assetInfo.url
+					if assetInfo and assetInfo.type and not assetInfo.url
+						hasTypeWithoutUrl = true
+					candidates.push assetInfo if assetInfo and assetInfo.url
 
 		console.log("__easUrl: assetInfo", assetInfo)
 		console.log("__easUrl: candidates", candidates)
 		console.log("__easUrl: sortVariants", candidates.sort(sortVariants))
 
 		if candidates.length > 0
-			assetInfo = candidates.sort(sortVariants)[0]
+			sorted = candidates.sort(sortVariants)
+			assetInfo = sorted[0]
 			assetInfo.defaults = defaults if defaults
+			assetInfo.alternatives = sorted.slice(1)
+			for alt in assetInfo.alternatives
+				alt.defaults = defaults if defaults
 			console.log("__easUrl: selected assetInfo", assetInfo)
+			return assetInfo
+		else if hasTypeWithoutUrl
+			# Trigger server fetch (format=long) in createMarkup
+			assetInfo.type = 'pending'
+			assetInfo.defaults = defaults if defaults
 		return assetInfo
 
 	sortVariants = (a, b) ->
@@ -145,51 +250,57 @@ class UBHD3DViewerPlugin extends AssetDetail
 			if not assetInfo or not assetInfo.url or not assetInfo.type
 				return
 
+		# Wichtig: URLs können absolute Hosts enthalten (z.B. Prod-Hostname),
+		# während der Benutzer über einen anderen Host zugreift.
+		# In dem Fall wären Fetch/XHR im IFrame cross-origin und würden keine
+		# Session-Cookies mitsenden (=> 403). Daher auf Same-Origin-Pfad normalisieren.
+		assetInfo.url = @__sameOriginUrl(assetInfo.url)
+		assetInfo.defaults = @__sameOriginUrl(assetInfo.defaults) if assetInfo.defaults
+		assetInfo.alternatives = (assetInfo.alternatives or []).map((a) =>
+			return a unless a?.url
+			a.url = @__sameOriginUrl(a.url)
+			a.defaults = @__sameOriginUrl(a.defaults) if a.defaults
+			return a
+		)
+
 		viewerDiv = CUI.dom.element("div", id: "ubhd3d")
 		plugin = ez5.pluginManager.getPlugin("fylr-plugin-ubhd-3d-viewer")
 		pluginStaticUrl = plugin.getBaseURL()
-		if assetInfo.type == 'nexus' or assetInfo.type == 'ply'
-			# 3DHOP-Viewer
-			isNexus = 0
-			if assetInfo.type == 'nexus'
-				isNexus = 1
-			iframe = CUI.dom.element("iframe", {
-				id: "ubhd3diframe",
-				"frameborder": "0",
-				"scrolling": "no",
-				"src": pluginStaticUrl+"/3dhopiframe.html?nexus="+isNexus+"&asset="+encodeURIComponent assetInfo.url
-			});
-		else
-			if assetInfo.type == 'rti'
-				# relight-Viewer
-				iframe = CUI.dom.element("iframe", {
-					id: "rtiiframe",
-					"frameborder": "0",
-					"scrolling": "no",
-					"style": "width: 100%; height: 100%;",
-					"src": pluginStaticUrl+"/rtiiframe.html?asset="+encodeURIComponent assetInfo.url
-				});
-			else
-				# three.js-basierter Viewer
-				if assetInfo.defaults
-					iframe = CUI.dom.element("iframe", {
-						id: "threeiframe",
-						"frameborder": "0",
-						"scrolling": "no",
-						#"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url+"."+encodeURIComponent assetInfo.extension+"&config="+encodeURIComponent assetInfo.defaults
-						"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url+"&config="+encodeURIComponent assetInfo.defaults
-					});
-				else
-					iframe = CUI.dom.element("iframe", {
-						id: "threeiframe",
-						"frameborder": "0",
-						"scrolling": "no",
-						#"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url+"."+encodeURIComponent assetInfo.extension
-						"src": pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent assetInfo.url
-					});
 
-		viewerDiv.appendChild(iframe)
+		# Append container early; set iframe src once we've picked an accessible candidate
 		CUI.dom.append(@outerDiv, viewerDiv)
+		iframe = CUI.dom.element("iframe", {
+			id: "ubhd3diframe",
+			"frameborder": "0",
+			"scrolling": "no",
+			"src": "about:blank"
+		})
+		viewerDiv.appendChild(iframe)
+
+		allCandidates = [assetInfo].concat(assetInfo.alternatives or [])
+		@__pickFirstAccessible(allCandidates).then((chosen) =>
+			chosen = chosen or assetInfo
+			if chosen.type == 'nexus' or chosen.type == 'ply'
+				isNexus = if chosen.type == 'nexus' then 1 else 0
+				assetParam = encodeURIComponent(chosen.url)
+				iframe.setAttribute('src', pluginStaticUrl+"/3dhopiframe.html?nexus="+isNexus+"&asset="+assetParam)
+			else if chosen.type == 'rti'
+				iframe.setAttribute('id', 'rtiiframe')
+				iframe.setAttribute('style', 'width: 100%; height: 100%;')
+				iframe.setAttribute('src', pluginStaticUrl+"/rtiiframe.html?asset="+encodeURIComponent(chosen.url))
+			else
+				if chosen.defaults
+					iframe.setAttribute('id', 'threeiframe')
+					iframe.setAttribute('src', pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent(chosen.url)+"&config="+encodeURIComponent(chosen.defaults))
+				else
+					iframe.setAttribute('id', 'threeiframe')
+					iframe.setAttribute('src', pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent(chosen.url))
+		).catch((_) =>
+			# Fallback: keep original behavior
+			iframe.setAttribute('src', pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent(assetInfo.url))
+		)
+
+		return
 
 
 ez5.session_ready =>
