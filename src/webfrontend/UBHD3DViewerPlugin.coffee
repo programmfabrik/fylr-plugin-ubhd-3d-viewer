@@ -39,9 +39,9 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 			idx = 0
 			checkNext = =>
-				# If we couldn't determine any status, prefer the first unknown candidate.
+				# If every known candidate is forbidden or missing, do not retry the first one.
 				if idx >= candidates.length
-					return resolve(unknown[0] ? candidates[0])
+					return resolve(unknown[0] ? null)
 				candidate = candidates[idx]
 				idx += 1
 				@__probeUrlStatus(candidate.url).then((status) =>
@@ -67,8 +67,9 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 	__bestVersionUrl: (version) ->
 		return null unless version
+		return version?.url if version?.url
 		return version.versions?.original?.url if version.versions?.original?.url
-		return version?.url
+		return null
 
 	__sameOriginUrl: (rawUrl) ->
 		return rawUrl unless rawUrl
@@ -79,6 +80,21 @@ class UBHD3DViewerPlugin extends AssetDetail
 			return u.href
 		catch err
 			return rawUrl
+
+	__withAccessToken: (rawUrl) ->
+		return rawUrl unless rawUrl
+		token = ez5?.session?.token
+		return rawUrl unless token
+		try
+			u = new URL(rawUrl, window.location.href)
+			isApiUrl = u.origin == window.location.origin and u.pathname.indexOf('/api/') == 0
+			return rawUrl unless isApiUrl
+			unless u.searchParams.get('access_token')
+				u.searchParams.set('access_token', token)
+			return u.pathname + u.search + u.hash
+		catch err
+			separator = if rawUrl.indexOf('?') == -1 then '?' else '&'
+			return rawUrl + separator + 'access_token=' + encodeURIComponent(token)
 
 	__processVersion: (version) ->		
 		# Nexus-Format
@@ -181,6 +197,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		if candidates.length > 0
 			sorted = candidates.sort(sortVariants)
+			if sorted.some((candidate) -> candidate?.type == 'gltf')
+				sorted = sorted.filter((candidate) -> candidate?.type != 'obj')
 			assetInfo = sorted[0]
 			assetInfo.defaults = defaults if defaults
 			assetInfo.alternatives = sorted.slice(1)
@@ -211,6 +229,17 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		return "ubhd.asset.detail.360degrees"
 
+	__fetchFullAssetInfo: ->
+		assetId = @asset?.value?._id
+		return null unless assetId
+		ez5.api.eas({
+			type: "GET",
+			data: {
+				ids: JSON.stringify([assetId]),
+				format: "long"
+			}
+		})
+
 	startAutomatically: ->
 		true
 
@@ -219,22 +248,23 @@ class UBHD3DViewerPlugin extends AssetDetail
 		super()
 		#We get the info of the asset, url and type
 		assetInfo = @__easUrl(@asset)
-		if not assetInfo.url and assetInfo.type
-			#If we have a type but no url we need to fetch the url from the server using the EAS api
-			#this could happen when we get a asset from a linked object standard for example, in that
-			#case the server will not send the versions of the asset by default, we have to get it manually.
-			ez5.api.eas({
-				type: "GET",
-				data: {
-					ids: JSON.stringify([@asset.value._id]),
-					format: "long"
-				}
-			}).done (assetServerData) =>
-				#This call is async so we have to wait the response and then with the data
-				# call to __createMarkup
-				if assetServerData.error
+		request = @__fetchFullAssetInfo()
+
+		if request?
+			# The upload/detail context may only expose a reduced variant set.
+			# Fetch the long EAS payload so we can see original + derived alternatives
+			# and fall back from a rights-protected GLB to OBJ/NXZ when needed.
+			request.done (assetServerData) =>
+				if assetServerData?.error
+					@__createMarkup(assetInfo) if assetInfo.url
 					return
 				@__createMarkup(null, assetServerData)
+			.fail =>
+				@__createMarkup(assetInfo) if assetInfo.url
+			return
+
+		if not assetInfo.url and assetInfo.type
+			return
 
 		#If we have url we can create the html.
 		if assetInfo.url
@@ -255,11 +285,15 @@ class UBHD3DViewerPlugin extends AssetDetail
 		# In dem Fall wären Fetch/XHR im IFrame cross-origin und würden keine
 		# Session-Cookies mitsenden (=> 403). Daher auf Same-Origin-Pfad normalisieren.
 		assetInfo.url = @__sameOriginUrl(assetInfo.url)
+		assetInfo.url = @__withAccessToken(assetInfo.url)
 		assetInfo.defaults = @__sameOriginUrl(assetInfo.defaults) if assetInfo.defaults
+		assetInfo.defaults = @__withAccessToken(assetInfo.defaults) if assetInfo.defaults
 		assetInfo.alternatives = (assetInfo.alternatives or []).map((a) =>
 			return a unless a?.url
 			a.url = @__sameOriginUrl(a.url)
+			a.url = @__withAccessToken(a.url)
 			a.defaults = @__sameOriginUrl(a.defaults) if a.defaults
+			a.defaults = @__withAccessToken(a.defaults) if a.defaults
 			return a
 		)
 
@@ -279,7 +313,9 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		allCandidates = [assetInfo].concat(assetInfo.alternatives or [])
 		@__pickFirstAccessible(allCandidates).then((chosen) =>
-			chosen = chosen or assetInfo
+			unless chosen
+				viewerDiv.textContent = '3D-Datei kann mit den aktuellen Rechten nicht geladen werden.'
+				return
 			if chosen.type == 'nexus' or chosen.type == 'ply'
 				isNexus = if chosen.type == 'nexus' then 1 else 0
 				assetParam = encodeURIComponent(chosen.url)
@@ -296,8 +332,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 					iframe.setAttribute('id', 'threeiframe')
 					iframe.setAttribute('src', pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent(chosen.url))
 		).catch((_) =>
-			# Fallback: keep original behavior
-			iframe.setAttribute('src', pluginStaticUrl+"/threeiframe.html?asset="+encodeURIComponent(assetInfo.url))
+			viewerDiv.textContent = '3D-Datei kann derzeit nicht geladen werden.'
 		)
 
 		return
