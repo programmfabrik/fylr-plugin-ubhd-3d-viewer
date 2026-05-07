@@ -1,0 +1,3 @@
+[submodule "lib/ubhd-3d-viewer"]
+	path = lib/ubhd-3d-viewer
+	url = git@gitlab.ub.uni-heidelberg.de:fdm/ubhd-3d-viewer.git

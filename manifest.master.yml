@@ -1,0 +1,15 @@
+plugin:
+  name: fylr-plugin-ubhd-3d-viewer
+  version: 1.0.0
+  url: https://github.com/programmfabrik/fylr-plugin-ubhd-3d-viewer
+  l10n: l10n/fylr-plugin-ubhd-3d-viewer.csv
+  displayname:
+    de-DE: UBHD 3D Viewer Plugin
+    en-US: UBHD 3D Viewer Plugin
+  info:
+    de-DE: Ein Plugin, um 3D-Modelle im UBHD-Format anzuzeigen.
+    en-US: A plugin to display 3D models in UBHD format.
+  webfrontend:
+    url: fylr-plugin-ubhd-3d-viewer.js
+    css: fylr-plugin-ubhd-3d-viewer.css
+base_url_prefix: "webfrontend"

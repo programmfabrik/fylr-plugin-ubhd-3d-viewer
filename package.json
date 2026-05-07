@@ -1,0 +1,9 @@
+{
+  "name": "fylr-plugin-ubhd-3d-viewer-build",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build-time dependencies for the FYLR UBHD 3D viewer plugin.",
+  "devDependencies": {
+    "coffeescript": "^2.7.0"
+  }
+}
