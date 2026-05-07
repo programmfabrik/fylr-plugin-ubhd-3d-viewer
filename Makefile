@@ -59,6 +59,7 @@ viewer-dist:
 	cp $(VIEWER_DIST_DIR)/index.html $(SRC_VIEWER_DIST_DIR)/index.html
 	cp -r $(VIEWER_DIST_ASSETS_DIR) $(SRC_VIEWER_DIST_DIR)/
 	if [ -d $(VIEWER_DIST_DIR)/draco ]; then cp -r $(VIEWER_DIST_DIR)/draco $(SRC_VIEWER_DIST_DIR)/; fi
+	sed -i 's|"/draco/"|new URL("../draco/", import.meta.url).href|g' $(SRC_VIEWER_DIST_DIR)/assets/index.js
 	@if [ ! -f $(VIEWER_DIST_DIR)/index.html ]; then \
 		echo "Missing viewer build output $(VIEWER_DIST_DIR)/index.html after npm run build."; \
 		exit 1; \
