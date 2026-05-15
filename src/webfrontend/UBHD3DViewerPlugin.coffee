@@ -2,22 +2,30 @@ PLUGIN_ID = 'fylr-plugin-ubhd-3d-viewer'
 PLUGIN_SCRIPT_SRC = if typeof document isnt 'undefined' then document.currentScript?.src else null
 
 class UBHD3DViewerPlugin extends AssetDetail
+	# Initialisiert das Plugin und bereitet spaetere Lazy-Loads des Viewer-Moduls vor.
+	# Der Promise-Cache verhindert, dass das Modul mehrfach parallel geladen wird.
 	constructor: (args...) ->
 		super(args...)
 		@viewerModulePromise = null
 
+	# Vereinheitlicht unterschiedliche Target-Typen auf ein echtes DOM-Element.
+	# So koennen Aufrufer jQuery-Objekte, Wrapper oder rohe Elemente uebergeben.
 	normalizeElement: (target) ->
 		return null unless target?
 		return target[0] if target.jquery?
 		return target.get(0) if typeof target.get is 'function'
 		target
 
+	# Ermittelt das aktuell geladene Plugin-Script aus dem Dokument.
+	# Das dient als Fallback, wenn die Base-URL nicht ueber den Plugin-Manager verfuegbar ist.
 	getPluginScript: ->
 		return document.currentScript if document.currentScript?.src?
 
 		Array.from(document.scripts).find (script) ->
 			/(UBHD3DViewerPlugin(?:\.coffee)?|fylr-plugin-ubhd-3d-viewer)\.js(?:[?#].*)?$/.test(script.src or '')
 
+	# Normalisiert eine moegliche Plugin-URL auf eine saubere Basis-URL mit abschliessendem Slash.
+	# Fehlerhafte oder nicht aufloesbare Werte werden bewusst als null verworfen.
 	normalizePluginBaseUrl: (value) ->
 		return null unless value
 
@@ -28,6 +36,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		catch err
 			null
 
+	# Bestimmt die Basis-URL des Plugins aus Manager, Script-Kontext oder DOM-Fallback.
+	# Diese URL ist die Grundlage fuer alle spaeteren Viewer- und Asset-Pfade.
 	getPluginBaseUrl: ->
 		pluginBaseUrl = ez5?.pluginManager?.getPlugin?(PLUGIN_ID)?.getBaseURL?()
 		normalized = @normalizePluginBaseUrl(pluginBaseUrl)
@@ -39,12 +49,16 @@ class UBHD3DViewerPlugin extends AssetDetail
 		script = @getPluginScript()
 		@normalizePluginBaseUrl(script?.src)
 
+	# Leitet aus der Plugin-Basis die URL zum eingebetteten Viewer-Paket ab.
+	# Ohne gueltige Basis-URL kann der Viewer spaeter nicht in einem Iframe geladen werden.
 	getViewerUrls: ->
 		pluginBaseUrl = @getPluginBaseUrl()
 		return null unless pluginBaseUrl?
 
 		pageUrl: new URL('viewer-dist/', pluginBaseUrl).href
 
+	# Fuegt das Viewer-Stylesheet genau einmal in den Dokumentkopf ein.
+	# Doppeltes Nachladen derselben CSS-Datei wird dadurch vermieden.
 	ensureViewerStylesheet: (cssUrl) ->
 		return unless cssUrl?
 
@@ -57,12 +71,16 @@ class UBHD3DViewerPlugin extends AssetDetail
 		link.dataset.ubhdViewerCss = cssUrl
 		document.head.appendChild(link)
 
+	# Laedt das Viewer-Modul dynamisch und cached den Promise fuer Wiederverwendung.
+	# So teilen sich mehrere Aufrufe denselben Import statt neue Loads zu erzeugen.
 	importViewerModule: (moduleUrl) ->
 		unless @viewerModulePromise?
 			@viewerModulePromise = Function('url', 'return import(url)')(moduleUrl)
 
 		@viewerModulePromise
 
+	# Prueft, ob eine Asset-URL mit den aktuellen Rechten grundsaetzlich erreichbar ist.
+	# Die Funktion versucht bevorzugt HEAD und faellt bei Bedarf auf einen kleinen GET-Request zurueck.
 	__probeUrlStatus: (url) ->
 		new Promise (resolve) ->
 			return resolve(null) unless url
@@ -94,6 +112,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 			resolve(null)
 
+	# Waehlt aus mehreren moeglichen Assets den ersten vernuenftig erreichbaren Kandidaten aus.
+	# Unsichere Ergebnisse werden gesammelt und erst verwendet, wenn kein klarer Treffer existiert.
 	__pickFirstAccessible: (assetInfos) ->
 		new Promise (resolve) =>
 			candidates = (assetInfos or []).filter((assetInfo) -> assetInfo?.url)
@@ -125,12 +145,16 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 			checkNext()
 
+	# Liefert fuer eine FYLR-Version die am besten passende Download-URL.
+	# Dabei wird zuerst die direkte URL und dann das Original der Version verwendet.
 	__bestVersionUrl: (version) ->
 		return null unless version?
 		return version.url if version.url?
 		return version.versions?.original?.url if version.versions?.original?.url?
 		null
 
+	# Wandelt externe API-URLs moeglichst in same-origin Pfade fuer den Browser um.
+	# Das reduziert Probleme mit CORS und sorgt fuer konsistente Request-URLs im Frontend.
 	__sameOriginUrl: (rawUrl) ->
 		return rawUrl unless rawUrl
 
@@ -142,6 +166,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		catch err
 			rawUrl
 
+	# Ergaenzt API-URLs um den aktuellen FYLR-Access-Token, falls noch keiner gesetzt ist.
+	# Dadurch koennen geschuetzte Assets auch im eingebetteten Viewer geladen werden.
 	__withAccessToken: (rawUrl) ->
 		return rawUrl unless rawUrl
 
@@ -159,6 +185,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 			separator = if rawUrl.indexOf('?') == -1 then '?' else '&'
 			rawUrl + separator + 'access_token=' + encodeURIComponent(token)
 
+	# Uebersetzt eine einzelne FYLR-Version in das interne AssetInfo-Format des Plugins.
+	# Erkannt werden hier die relevanten GLB- und glTF-Varianten inklusive Priorisierung.
 	__processVersion: (version) ->
 		assetInfo =
 			type: null
@@ -196,6 +224,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		false
 
+	# Durchsucht Asset-Varianten aus EAS-Daten nach einem darstellbaren 3D-Modell.
+	# Neben dem Haupttreffer werden Defaults und alternative Kandidaten fuer spaetere Fallbacks gesammelt.
 	__easUrl: (asset) ->
 		assetInfo =
 			type: null
@@ -238,12 +268,16 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		assetInfo
 
+	# Liefert den Lokalisierungsschluessel fuer den Viewer-Button nur bei verwertbaren Assets.
+	# Fehlt ein passender Modellpfad, blendet das Plugin den Button konsequent aus.
 	getButtonLocaKey: (asset) ->
 		assetInfo = @__easUrl(asset ? @asset)
 		assetInfo = @fallbackAssetInfo(asset ? @asset) unless assetInfo.url or assetInfo.type
 		return unless assetInfo.url or assetInfo.type
 		'ubhd.asset.detail.360degrees'
 
+	# Laedt bei Bedarf die vollstaendige Asset-Beschreibung ueber die EAS-API nach.
+	# Das Plugin bekommt damit zusaetzliche Varianten, die im initialen Kontext fehlen koennen.
 	__fetchFullAssetInfo: ->
 		assetId = @asset?.value?._id
 		return null unless assetId
@@ -251,15 +285,21 @@ class UBHD3DViewerPlugin extends AssetDetail
 		ez5.api.eas(
 			type: 'GET'
 			data:
+	# Signalisiert FYLR, dass der Viewer ohne weiteren Klick direkt gestartet werden darf.
+	# Das Plugin verhaelt sich damit wie eine automatische Detailansicht fuer 3D-Assets.
 				ids: JSON.stringify([assetId])
 				format: 'long'
 		)
+	# Extrahiert die relevante Dateiendung aus einer Modell-URL.
+	# Query-Parameter oder Hash-Fragmente werden dabei fuer die Erkennung ignoriert.
 
 	startAutomatically: ->
 		true
 
 	getExtension: (url) ->
 		return null unless typeof url is 'string'
+	# Durchlaeuft beliebige verschachtelte Datenstrukturen und sammelt moegliche Modell-URLs ein.
+	# Rekursionstiefe und WeakSet verhindern Endlosschleifen bei zyklischen oder tiefen Objekten.
 
 		match = url.toLowerCase().match(/\.([a-z0-9]+)(?:$|[?#])/) 
 		if match then match[1] else null
@@ -291,6 +331,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		results
 
+	# Bewertet einen gefundenen Modellkandidaten nach Dateityp und semantischem Pfadkontext.
+	# So werden echte Quelldateien hoeher priorisiert als Preview- oder Thumbnail-Treffer.
 	scoreModelCandidate: (candidate) ->
 		pathText = candidate.path.join('.').toLowerCase()
 		score = if candidate.extension == 'glb' then 120 else 110
@@ -301,6 +343,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		score
 
+	# Baut aus heuristisch gefundenen URLs ein AssetInfo-Fallback fuer unvollstaendige Asset-Daten.
+	# Damit kann der Viewer auch dann noch starten, wenn keine regulare EAS-Variante gefunden wurde.
 	fallbackAssetInfo: (asset) ->
 		source = asset?.value ? asset
 		candidates = @collectModelUrlCandidates(source)
@@ -321,6 +365,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		defaults: ''
 		alternatives: []
 
+	# Erzeugt einen einfachen DOM-Container mit Canvas fuer eine direkte Viewer-Montage.
+	# Die Methode bereinigt das Ziel vorher und stellt eine Mindesthoehe fuer die Anzeige sicher.
 	createViewerContainer: (target) ->
 		container = @normalizeElement(target)
 		return null unless container?
@@ -335,6 +381,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		container: container
 		canvas: canvas
 
+	# Bindet den eigentlichen Viewer als Iframe in das Ziel-Element ein.
+	# Asset-URL und optionale Default-Konfiguration werden ueber Query-Parameter uebergeben.
 	__mountViewer: (target, assetInfo) ->
 		urls = @getViewerUrls()
 
@@ -363,6 +411,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		container.appendChild(iframe)
 		Promise.resolve(iframe)
 
+	# Startet den Markup-Aufbau und entscheidet zwischen lokalen und nachgeladenen Asset-Daten.
+	# Falls noetig, wird zuerst eine vollstaendige Serverabfrage angestossen und danach gerendert.
 	createMarkup: ->
 		super()
 		assetInfo = @__easUrl(@asset)
@@ -383,6 +433,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		@__createMarkup(assetInfo) if assetInfo.url
 		return
 
+	# Bereitet die Viewer-Daten final auf, normalisiert URLs und mountet den ersten gueltigen Kandidaten.
+	# Fehler bei Rechtepruefung oder Iframe-Start werden in eine klare Benutzeranzeige uebersetzt.
 	__createMarkup: (assetInfo, assetServerData) ->
 		if not assetInfo and assetServerData
 			assetInfo = @__easUrl(assetServerData)
@@ -423,6 +475,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 window.UBHD3DViewerPlugin = UBHD3DViewerPlugin if typeof window isnt 'undefined'
 
+# Sortiert gefundene Asset-Varianten nach ihrer vom Plugin vergebenen Prioritaet.
+# Varianten ohne Prioritaet fallen hinter bekannte, besser geeignete Treffer zurueck.
 sortVariants = (a, b) ->
 	if a.prio and b.prio
 		b.prio - a.prio
@@ -433,6 +487,8 @@ sortVariants = (a, b) ->
 	else
 		0
 
+# Registriert das Plugin erst nach verfuegbarer Session im FYLR-Frontend.
+# Anschliessend wird die zugehoerige Plugin-CSS ueber den Plugin-Manager geladen.
 ez5.session_ready =>
 	AssetBrowser?.plugins?.registerPlugin?(UBHD3DViewerPlugin)
 	ez5.pluginManager.getPlugin('fylr-plugin-ubhd-3d-viewer')?.loadCss?()
