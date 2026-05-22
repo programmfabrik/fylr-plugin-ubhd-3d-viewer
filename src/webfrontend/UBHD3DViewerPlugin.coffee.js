@@ -6,11 +6,15 @@ PLUGIN_ID = 'fylr-plugin-ubhd-3d-viewer';
 PLUGIN_SCRIPT_SRC = typeof document !== 'undefined' ? (ref = document.currentScript) != null ? ref.src : void 0 : null;
 
 UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
+  // Initialisiert das Plugin und bereitet spaetere Lazy-Loads des Viewer-Moduls vor.
+  // Der Promise-Cache verhindert, dass das Modul mehrfach parallel geladen wird.
   constructor(...args) {
     super(...args);
     this.viewerModulePromise = null;
   }
 
+  // Vereinheitlicht unterschiedliche Target-Typen auf ein echtes DOM-Element.
+  // So koennen Aufrufer jQuery-Objekte, Wrapper oder rohe Elemente uebergeben.
   normalizeElement(target) {
     if (target == null) {
       return null;
@@ -24,6 +28,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return target;
   }
 
+  // Ermittelt das aktuell geladene Plugin-Script aus dem Dokument.
+  // Das dient als Fallback, wenn die Base-URL nicht ueber den Plugin-Manager verfuegbar ist.
   getPluginScript() {
     var ref1;
     if (((ref1 = document.currentScript) != null ? ref1.src : void 0) != null) {
@@ -34,6 +40,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     });
   }
 
+  // Normalisiert eine moegliche Plugin-URL auf eine saubere Basis-URL mit abschliessendem Slash.
+  // Fehlerhafte oder nicht aufloesbare Werte werden bewusst als null verworfen.
   normalizePluginBaseUrl(value) {
     var err, url;
     if (!value) {
@@ -51,6 +59,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     }
   }
 
+  // Bestimmt die Basis-URL des Plugins aus Manager, Script-Kontext oder DOM-Fallback.
+  // Diese URL ist die Grundlage fuer alle spaeteren Viewer- und Asset-Pfade.
   getPluginBaseUrl() {
     var normalized, pluginBaseUrl, ref1, ref2, script;
     pluginBaseUrl = typeof ez5 !== "undefined" && ez5 !== null ? (ref1 = ez5.pluginManager) != null ? typeof ref1.getPlugin === "function" ? (ref2 = ref1.getPlugin(PLUGIN_ID)) != null ? typeof ref2.getBaseURL === "function" ? ref2.getBaseURL() : void 0 : void 0 : void 0 : void 0 : void 0;
@@ -66,6 +76,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return this.normalizePluginBaseUrl(script != null ? script.src : void 0);
   }
 
+  // Leitet aus der Plugin-Basis die URL zum eingebetteten Viewer-Paket ab.
+  // Ohne gueltige Basis-URL kann der Viewer spaeter nicht in einem Iframe geladen werden.
   getViewerUrls() {
     var pluginBaseUrl;
     pluginBaseUrl = this.getPluginBaseUrl();
@@ -77,6 +89,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     };
   }
 
+  // Fuegt das Viewer-Stylesheet genau einmal in den Dokumentkopf ein.
+  // Doppeltes Nachladen derselben CSS-Datei wird dadurch vermieden.
   ensureViewerStylesheet(cssUrl) {
     var existingLink, link;
     if (cssUrl == null) {
@@ -93,6 +107,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return document.head.appendChild(link);
   }
 
+  // Laedt das Viewer-Modul dynamisch und cached den Promise fuer Wiederverwendung.
+  // So teilen sich mehrere Aufrufe denselben Import statt neue Loads zu erzeugen.
   importViewerModule(moduleUrl) {
     if (this.viewerModulePromise == null) {
       this.viewerModulePromise = Function('url', 'return import(url)')(moduleUrl);
@@ -100,6 +116,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return this.viewerModulePromise;
   }
 
+  // Prueft, ob eine Asset-URL mit den aktuellen Rechten grundsaetzlich erreichbar ist.
+  // Die Funktion versucht bevorzugt HEAD und faellt bei Bedarf auf einen kleinen GET-Request zurueck.
   __probeUrlStatus(url) {
     return new Promise(function(resolve) {
       var err, getOpts, headOpts, ref1;
@@ -166,6 +184,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     });
   }
 
+  // Waehlt aus mehreren moeglichen Assets den ersten vernuenftig erreichbaren Kandidaten aus.
+  // Unsichere Ergebnisse werden gesammelt und erst verwendet, wenn kein klarer Treffer existiert.
   __pickFirstAccessible(assetInfos) {
     return new Promise((resolve) => {
       var candidates, checkNext, idx, unknown;
@@ -204,6 +224,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     });
   }
 
+  // Liefert fuer eine FYLR-Version die am besten passende Download-URL.
+  // Dabei wird zuerst die direkte URL und dann das Original der Version verwendet.
   __bestVersionUrl(version) {
     var ref1, ref2, ref3, ref4;
     if (version == null) {
@@ -218,6 +240,35 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return null;
   }
 
+  modelTypeForExtension(extension) {
+    switch (extension != null ? extension.toLowerCase() : void 0) {
+      case 'glb':
+      case 'gltf':
+        return 'gltf';
+      case 'nxs':
+      case 'nxz':
+        return 'nexus';
+      default:
+        return null;
+    }
+  }
+
+  modelPriorityForExtension(extension) {
+    switch (extension != null ? extension.toLowerCase() : void 0) {
+      case 'nxs':
+        return 6;
+      case 'glb':
+        return 5;
+      case 'nxz':
+      case 'gltf':
+        return 4;
+      default:
+        return null;
+    }
+  }
+
+  // Wandelt externe API-URLs moeglichst in same-origin Pfade fuer den Browser um.
+  // Das reduziert Probleme mit CORS und sorgt fuer konsistente Request-URLs im Frontend.
   __sameOriginUrl(rawUrl) {
     var err, u;
     if (!rawUrl) {
@@ -235,6 +286,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     }
   }
 
+  // Ergaenzt API-URLs um den aktuellen FYLR-Access-Token, falls noch keiner gesetzt ist.
+  // Dadurch koennen geschuetzte Assets auch im eingebetteten Viewer geladen werden.
   __withAccessToken(rawUrl) {
     var err, isApiUrl, ref1, separator, token, u;
     if (!rawUrl) {
@@ -261,8 +314,10 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     }
   }
 
+  // Uebersetzt eine einzelne FYLR-Version in das interne AssetInfo-Format des Plugins.
+  // Erkannt werden hier die relevanten GLB- und glTF-Varianten inklusive Priorisierung.
   __processVersion(version) {
-    var assetInfo, ref1, ref2, ref3, ref4, url;
+    var assetInfo, extension, prio, ref1, ref2, ref3, ref4, ref5, type;
     assetInfo = {
       type: null,
       url: null,
@@ -282,29 +337,21 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
         return assetInfo;
       }
     }
-    if (version.extension === 'glb') {
-      url = this.__bestVersionUrl(version);
-      if (url != null) {
-        assetInfo.type = 'gltf';
-        assetInfo.url = url;
-        assetInfo.extension = version.extension;
-        assetInfo.prio = 5;
-        return assetInfo;
-      }
+    extension = (ref5 = version.extension) != null ? ref5.toLowerCase() : void 0;
+    type = this.modelTypeForExtension(extension);
+    prio = this.modelPriorityForExtension(extension);
+    if (!((type != null) && (prio != null))) {
+      return false;
     }
-    if (version.extension === 'gltf') {
-      url = this.__bestVersionUrl(version);
-      if (url != null) {
-        assetInfo.type = 'gltf';
-        assetInfo.url = url;
-        assetInfo.extension = version.extension;
-        assetInfo.prio = 4;
-        return assetInfo;
-      }
-    }
-    return false;
+    assetInfo.type = type;
+    assetInfo.url = this.__bestVersionUrl(version);
+    assetInfo.extension = extension;
+    assetInfo.prio = prio;
+    return assetInfo;
   }
 
+  // Durchsucht Asset-Varianten aus EAS-Daten nach einem darstellbaren 3D-Modell.
+  // Neben dem Haupttreffer werden Defaults und alternative Kandidaten fuer spaetere Fallbacks gesammelt.
   __easUrl(asset) {
     var alternative, assetInfo, candidates, defaults, hasTypeWithoutUrl, i, j, k, len, len1, len2, processed, ref1, ref2, ref3, ref4, sorted, variant, variants, version;
     assetInfo = {
@@ -367,18 +414,22 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return assetInfo;
   }
 
+  // Liefert den Lokalisierungsschluessel fuer den Viewer-Button nur bei verwertbaren Assets.
+  // Fehlt ein passender Modellpfad, blendet das Plugin den Button konsequent aus.
   getButtonLocaKey(asset) {
     var assetInfo;
     assetInfo = this.__easUrl(asset != null ? asset : this.asset);
-    if (!(assetInfo.url || assetInfo.type)) {
+    if (!((assetInfo != null ? assetInfo.url : void 0) || (assetInfo != null ? assetInfo.type : void 0))) {
       assetInfo = this.fallbackAssetInfo(asset != null ? asset : this.asset);
     }
-    if (!(assetInfo.url || assetInfo.type)) {
+    if (!((assetInfo != null ? assetInfo.url : void 0) || (assetInfo != null ? assetInfo.type : void 0))) {
       return;
     }
     return 'ubhd.asset.detail.360degrees';
   }
 
+  // Laedt bei Bedarf die vollstaendige Asset-Beschreibung ueber die EAS-API nach.
+  // Das Plugin bekommt damit zusaetzliche Varianten, die im initialen Kontext fehlen koennen.
   __fetchFullAssetInfo() {
     var assetId, ref1, ref2;
     assetId = (ref1 = this.asset) != null ? (ref2 = ref1.value) != null ? ref2._id : void 0 : void 0;
@@ -388,12 +439,16 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return ez5.api.eas({
       type: 'GET',
       data: {
+        // Signalisiert FYLR, dass der Viewer ohne weiteren Klick direkt gestartet werden darf.
+        // Das Plugin verhaelt sich damit wie eine automatische Detailansicht fuer 3D-Assets.
         ids: JSON.stringify([assetId]),
         format: 'long'
       }
     });
   }
 
+  // Extrahiert die relevante Dateiendung aus einer Modell-URL.
+  // Query-Parameter oder Hash-Fragmente werden dabei fuer die Erkennung ignoriert.
   startAutomatically() {
     return true;
   }
@@ -403,6 +458,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     if (typeof url !== 'string') {
       return null;
     }
+    // Durchlaeuft beliebige verschachtelte Datenstrukturen und sammelt moegliche Modell-URLs ein.
+    // Rekursionstiefe und WeakSet verhindern Endlosschleifen bei zyklischen oder tiefen Objekten.
     match = url.toLowerCase().match(/\.([a-z0-9]+)(?:$|[?#])/);
     if (match) {
       return match[1];
@@ -412,16 +469,18 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
   }
 
   collectModelUrlCandidates(value, seen = new WeakSet(), depth = 0, path = [], results = []) {
-    var extension;
+    var extension, type;
     if (depth > 7 || (value == null)) {
       return results;
     }
     if (typeof value === 'string') {
       extension = this.getExtension(value);
-      if (extension === 'glb' || extension === 'gltf') {
+      type = this.modelTypeForExtension(extension);
+      if (type != null) {
         results.push({
           url: value,
           extension: extension,
+          type: type,
           path: path.slice()
         });
       }
@@ -446,10 +505,23 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return results;
   }
 
+  // Bewertet einen gefundenen Modellkandidaten nach Dateityp und semantischem Pfadkontext.
+  // So werden echte Quelldateien hoeher priorisiert als Preview- oder Thumbnail-Treffer.
   scoreModelCandidate(candidate) {
     var pathText, score;
     pathText = candidate.path.join('.').toLowerCase();
-    score = candidate.extension === 'glb' ? 120 : 110;
+    score = (function() {
+      switch (candidate.extension) {
+        case 'nxs':
+          return 130;
+        case 'glb':
+          return 120;
+        case 'nxz':
+          return 115;
+        default:
+          return 110;
+      }
+    })();
     if (/(^|\.)(url|href|download|downloadurl|file|original|source|target)$/.test(pathText)) {
       score += 40;
     }
@@ -462,8 +534,10 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return score;
   }
 
+  // Baut aus heuristisch gefundenen URLs ein AssetInfo-Fallback fuer unvollstaendige Asset-Daten.
+  // Damit kann der Viewer auch dann noch starten, wenn keine regulare EAS-Variante gefunden wurde.
   fallbackAssetInfo(asset) {
-    var bestCandidate, candidates, ref1, source;
+    var bestCandidate, candidates, prio, ref1, source, type;
     source = (ref1 = asset != null ? asset.value : void 0) != null ? ref1 : asset;
     candidates = this.collectModelUrlCandidates(source);
     if (!candidates.length) {
@@ -476,19 +550,23 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     }).sort(function(left, right) {
       return right.score - left.score;
     })[0];
-    if (!(bestCandidate != null ? bestCandidate.url : void 0)) {
+    type = this.modelTypeForExtension(bestCandidate != null ? bestCandidate.extension : void 0);
+    prio = this.modelPriorityForExtension(bestCandidate != null ? bestCandidate.extension : void 0);
+    if (!((bestCandidate != null ? bestCandidate.url : void 0) && (type != null) && (prio != null))) {
       return null;
     }
     return {
-      type: 'gltf',
+      type: type,
       url: bestCandidate.url,
       extension: bestCandidate.extension,
-      prio: bestCandidate.extension === 'glb' ? 5 : 4,
+      prio: prio,
       defaults: '',
       alternatives: []
     };
   }
 
+  // Erzeugt einen einfachen DOM-Container mit Canvas fuer eine direkte Viewer-Montage.
+  // Die Methode bereinigt das Ziel vorher und stellt eine Mindesthoehe fuer die Anzeige sicher.
   createViewerContainer(target) {
     var canvas, container;
     container = this.normalizeElement(target);
@@ -506,6 +584,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     };
   }
 
+  // Bindet den eigentlichen Viewer als Iframe in das Ziel-Element ein.
+  // Asset-URL und optionale Default-Konfiguration werden ueber Query-Parameter uebergeben.
   __mountViewer(target, assetInfo) {
     var container, iframe, pageUrl, urls;
     urls = this.getViewerUrls();
@@ -536,38 +616,42 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return Promise.resolve(iframe);
   }
 
+  // Startet den Markup-Aufbau und entscheidet zwischen lokalen und nachgeladenen Asset-Daten.
+  // Falls noetig, wird zuerst eine vollstaendige Serverabfrage angestossen und danach gerendert.
   createMarkup() {
     var assetInfo, request;
     super.createMarkup();
     assetInfo = this.__easUrl(this.asset);
-    if (!(assetInfo.url || assetInfo.type)) {
+    if (!((assetInfo != null ? assetInfo.url : void 0) || (assetInfo != null ? assetInfo.type : void 0))) {
       assetInfo = this.fallbackAssetInfo(this.asset);
     }
     request = this.__fetchFullAssetInfo();
     if (request != null) {
       request.done((assetServerData) => {
         if (assetServerData != null ? assetServerData.error : void 0) {
-          if (assetInfo.url) {
+          if (assetInfo != null ? assetInfo.url : void 0) {
             this.__createMarkup(assetInfo);
           }
           return;
         }
         return this.__createMarkup(null, assetServerData);
       }).fail(() => {
-        if (assetInfo.url) {
+        if (assetInfo != null ? assetInfo.url : void 0) {
           return this.__createMarkup(assetInfo);
         }
       });
       return;
     }
-    if (!assetInfo.url && assetInfo.type) {
+    if (!(assetInfo != null ? assetInfo.url : void 0) && (assetInfo != null ? assetInfo.type : void 0)) {
       return;
     }
-    if (assetInfo.url) {
+    if (assetInfo != null ? assetInfo.url : void 0) {
       this.__createMarkup(assetInfo);
     }
   }
 
+  // Bereitet die Viewer-Daten final auf, normalisiert URLs und mountet den ersten gueltigen Kandidaten.
+  // Fehler bei Rechtepruefung oder Iframe-Start werden in eine klare Benutzeranzeige uebersetzt.
   __createMarkup(assetInfo, assetServerData) {
     var allCandidates, viewerDiv;
     if (!assetInfo && assetServerData) {
@@ -578,6 +662,12 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
       if (!((assetInfo != null ? assetInfo.url : void 0) && (assetInfo != null ? assetInfo.type : void 0))) {
         return;
       }
+    }
+    if (!((assetInfo != null ? assetInfo.url : void 0) || (assetInfo != null ? assetInfo.type : void 0))) {
+      return;
+    }
+    if (!assetInfo.url && assetInfo.type) {
+      return;
     }
     assetInfo.url = this.__sameOriginUrl(assetInfo.url);
     assetInfo.url = this.__withAccessToken(assetInfo.url);
@@ -626,6 +716,8 @@ if (typeof window !== 'undefined') {
   window.UBHD3DViewerPlugin = UBHD3DViewerPlugin;
 }
 
+// Sortiert gefundene Asset-Varianten nach ihrer vom Plugin vergebenen Prioritaet.
+// Varianten ohne Prioritaet fallen hinter bekannte, besser geeignete Treffer zurueck.
 sortVariants = function(a, b) {
   if (a.prio && b.prio) {
     return b.prio - a.prio;
@@ -638,6 +730,8 @@ sortVariants = function(a, b) {
   }
 };
 
+// Registriert das Plugin erst nach verfuegbarer Session im FYLR-Frontend.
+// Anschliessend wird die zugehoerige Plugin-CSS ueber den Plugin-Manager geladen.
 ez5.session_ready(() => {
   var ref1, ref2;
   if (typeof AssetBrowser !== "undefined" && AssetBrowser !== null) {

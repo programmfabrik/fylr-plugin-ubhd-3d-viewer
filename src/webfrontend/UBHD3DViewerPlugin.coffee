@@ -153,6 +153,19 @@ class UBHD3DViewerPlugin extends AssetDetail
 		return version.versions?.original?.url if version.versions?.original?.url?
 		null
 
+	modelTypeForExtension: (extension) ->
+		switch extension?.toLowerCase()
+			when 'glb', 'gltf' then 'gltf'
+			when 'nxs', 'nxz' then 'nexus'
+			else null
+
+	modelPriorityForExtension: (extension) ->
+		switch extension?.toLowerCase()
+			when 'nxs' then 6
+			when 'glb' then 5
+			when 'nxz', 'gltf' then 4
+			else null
+
 	# Wandelt externe API-URLs moeglichst in same-origin Pfade fuer den Browser um.
 	# Das reduziert Probleme mit CORS und sorgt fuer konsistente Request-URLs im Frontend.
 	__sameOriginUrl: (rawUrl) ->
@@ -204,25 +217,18 @@ class UBHD3DViewerPlugin extends AssetDetail
 			assetInfo.extension = version.versions?.original?.extension
 			return assetInfo if assetInfo.url?
 
-		if version.extension == 'glb'
-			url = @__bestVersionUrl(version)
-			if url?
-				assetInfo.type = 'gltf'
-				assetInfo.url = url
-				assetInfo.extension = version.extension
-				assetInfo.prio = 5
-				return assetInfo
+		extension = version.extension?.toLowerCase()
+		type = @modelTypeForExtension(extension)
+		prio = @modelPriorityForExtension(extension)
 
-		if version.extension == 'gltf'
-			url = @__bestVersionUrl(version)
-			if url?
-				assetInfo.type = 'gltf'
-				assetInfo.url = url
-				assetInfo.extension = version.extension
-				assetInfo.prio = 4
-				return assetInfo
+		return false unless type? and prio?
 
-		false
+		assetInfo.type = type
+		assetInfo.url = @__bestVersionUrl(version)
+		assetInfo.extension = extension
+		assetInfo.prio = prio
+
+		assetInfo
 
 	# Durchsucht Asset-Varianten aus EAS-Daten nach einem darstellbaren 3D-Modell.
 	# Neben dem Haupttreffer werden Defaults und alternative Kandidaten fuer spaetere Fallbacks gesammelt.
@@ -272,8 +278,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 	# Fehlt ein passender Modellpfad, blendet das Plugin den Button konsequent aus.
 	getButtonLocaKey: (asset) ->
 		assetInfo = @__easUrl(asset ? @asset)
-		assetInfo = @fallbackAssetInfo(asset ? @asset) unless assetInfo.url or assetInfo.type
-		return unless assetInfo.url or assetInfo.type
+		assetInfo = @fallbackAssetInfo(asset ? @asset) unless assetInfo?.url or assetInfo?.type
+		return unless assetInfo?.url or assetInfo?.type
 		'ubhd.asset.detail.360degrees'
 
 	# Laedt bei Bedarf die vollstaendige Asset-Beschreibung ueber die EAS-API nach.
@@ -309,10 +315,12 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 		if typeof value is 'string'
 			extension = @getExtension(value)
-			if extension in ['glb', 'gltf']
+			type = @modelTypeForExtension(extension)
+			if type?
 				results.push(
 					url: value
 					extension: extension
+					type: type
 					path: path.slice()
 				)
 			return results
@@ -335,7 +343,11 @@ class UBHD3DViewerPlugin extends AssetDetail
 	# So werden echte Quelldateien hoeher priorisiert als Preview- oder Thumbnail-Treffer.
 	scoreModelCandidate: (candidate) ->
 		pathText = candidate.path.join('.').toLowerCase()
-		score = if candidate.extension == 'glb' then 120 else 110
+		score = switch candidate.extension
+			when 'nxs' then 130
+			when 'glb' then 120
+			when 'nxz' then 115
+			else 110
 
 		score += 40 if /(^|\.)(url|href|download|downloadurl|file|original|source|target)$/.test(pathText)
 		score += 20 if /(version|versions|derived|files|asset|original|source)/.test(pathText)
@@ -356,12 +368,14 @@ class UBHD3DViewerPlugin extends AssetDetail
 			)
 			.sort((left, right) -> right.score - left.score)[0]
 
-		return null unless bestCandidate?.url
+		type = @modelTypeForExtension(bestCandidate?.extension)
+		prio = @modelPriorityForExtension(bestCandidate?.extension)
+		return null unless bestCandidate?.url and type? and prio?
 
-		type: 'gltf'
+		type: type
 		url: bestCandidate.url
 		extension: bestCandidate.extension
-		prio: if bestCandidate.extension == 'glb' then 5 else 4
+		prio: prio
 		defaults: ''
 		alternatives: []
 
@@ -416,21 +430,21 @@ class UBHD3DViewerPlugin extends AssetDetail
 	createMarkup: ->
 		super()
 		assetInfo = @__easUrl(@asset)
-		assetInfo = @fallbackAssetInfo(@asset) unless assetInfo.url or assetInfo.type
+		assetInfo = @fallbackAssetInfo(@asset) unless assetInfo?.url or assetInfo?.type
 		request = @__fetchFullAssetInfo()
 
 		if request?
 			request.done (assetServerData) =>
 				if assetServerData?.error
-					@__createMarkup(assetInfo) if assetInfo.url
+					@__createMarkup(assetInfo) if assetInfo?.url
 					return
 				@__createMarkup(null, assetServerData)
 			.fail =>
-				@__createMarkup(assetInfo) if assetInfo.url
+				@__createMarkup(assetInfo) if assetInfo?.url
 			return
 
-		return if not assetInfo.url and assetInfo.type
-		@__createMarkup(assetInfo) if assetInfo.url
+		return if not assetInfo?.url and assetInfo?.type
+		@__createMarkup(assetInfo) if assetInfo?.url
 		return
 
 	# Bereitet die Viewer-Daten final auf, normalisiert URLs und mountet den ersten gueltigen Kandidaten.
@@ -440,6 +454,9 @@ class UBHD3DViewerPlugin extends AssetDetail
 			assetInfo = @__easUrl(assetServerData)
 			assetInfo = @fallbackAssetInfo(assetServerData) unless assetInfo?.url and assetInfo?.type
 			return unless assetInfo?.url and assetInfo?.type
+
+		return unless assetInfo?.url or assetInfo?.type
+		return if not assetInfo.url and assetInfo.type
 
 		assetInfo.url = @__sameOriginUrl(assetInfo.url)
 		assetInfo.url = @__withAccessToken(assetInfo.url)
