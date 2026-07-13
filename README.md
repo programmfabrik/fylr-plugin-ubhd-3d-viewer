@@ -1,4 +1,4 @@
-# UBHD 3D Viewer Plugin
+# fylr-plugin-ubhd-3d-viewer
 
 Dieses Plugin bindet den UBHD-3D-Viewer in FYLR ein und zeigt 3D-Modelle in der Asset-Detailansicht an.
 
