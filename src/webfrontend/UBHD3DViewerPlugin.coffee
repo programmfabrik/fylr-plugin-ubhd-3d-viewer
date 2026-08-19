@@ -192,10 +192,6 @@ class UBHD3DViewerPlugin extends AssetDetail
 						hasTypeWithoutUrl = true
 					candidates.push assetInfo if assetInfo and assetInfo.url
 
-		console.log("__easUrl: assetInfo", assetInfo)
-		console.log("__easUrl: candidates", candidates)
-		console.log("__easUrl: sortVariants", candidates.sort(sortVariants))
-
 		if candidates.length > 0
 			sorted = candidates.sort(sortVariants)
 			if sorted.some((candidate) -> candidate?.type == 'gltf')
@@ -205,7 +201,6 @@ class UBHD3DViewerPlugin extends AssetDetail
 			assetInfo.alternatives = sorted.slice(1)
 			for alt in assetInfo.alternatives
 				alt.defaults = defaults if defaults
-			console.log("__easUrl: selected assetInfo", assetInfo)
 			return assetInfo
 		else if hasTypeWithoutUrl
 			# Trigger server fetch (format=long) in createMarkup
