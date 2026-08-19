@@ -181,7 +181,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		defaults = null
 		hasTypeWithoutUrl = false
 		for variant in variants
-			for version in Object.values(variant.versions)
+			# an asset that is still uploading or producing has no versions yet
+			for version in Object.values(variant?.versions or {})
 			# 3D Viewer JSON
 				if version.original_filename == '3D_viewer.json'
 					defaults = version.versions.original?.url
