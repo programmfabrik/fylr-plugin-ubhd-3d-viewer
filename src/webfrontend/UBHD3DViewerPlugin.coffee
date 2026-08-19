@@ -181,7 +181,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 		defaults = null
 		hasTypeWithoutUrl = false
 		for variant in variants
-			for version in Object.values(variant.versions)
+			# an asset that is still uploading or producing has no versions yet
+			for version in Object.values(variant?.versions or {})
 			# 3D Viewer JSON
 				if version.original_filename == '3D_viewer.json'
 					defaults = version.versions.original?.url
@@ -190,10 +191,6 @@ class UBHD3DViewerPlugin extends AssetDetail
 					if assetInfo and assetInfo.type and not assetInfo.url
 						hasTypeWithoutUrl = true
 					candidates.push assetInfo if assetInfo and assetInfo.url
-
-		console.log("__easUrl: assetInfo", assetInfo)
-		console.log("__easUrl: candidates", candidates)
-		console.log("__easUrl: sortVariants", candidates.sort(sortVariants))
 
 		if candidates.length > 0
 			sorted = candidates.sort(sortVariants)
@@ -204,7 +201,6 @@ class UBHD3DViewerPlugin extends AssetDetail
 			assetInfo.alternatives = sorted.slice(1)
 			for alt in assetInfo.alternatives
 				alt.defaults = defaults if defaults
-			console.log("__easUrl: selected assetInfo", assetInfo)
 			return assetInfo
 		else if hasTypeWithoutUrl
 			# Trigger server fetch (format=long) in createMarkup
@@ -340,4 +336,6 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 ez5.session_ready =>
 	AssetBrowser.plugins.registerPlugin(UBHD3DViewerPlugin)
-	ez5.pluginManager.getPlugin("fylr-plugin-ubhd-3d-viewer").loadCss()
+	# fylr answers /api/v1/plugin with a 30 day cache header, so the plugin list
+	# the frontend booted with can be older than the bundle this code comes in
+	ez5.pluginManager.getPlugin("fylr-plugin-ubhd-3d-viewer")?.loadCss()
