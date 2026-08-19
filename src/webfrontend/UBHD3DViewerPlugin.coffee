@@ -341,4 +341,6 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 ez5.session_ready =>
 	AssetBrowser.plugins.registerPlugin(UBHD3DViewerPlugin)
-	ez5.pluginManager.getPlugin("fylr-plugin-ubhd-3d-viewer").loadCss()
+	# fylr answers /api/v1/plugin with a 30 day cache header, so the plugin list
+	# the frontend booted with can be older than the bundle this code comes in
+	ez5.pluginManager.getPlugin("fylr-plugin-ubhd-3d-viewer")?.loadCss()
