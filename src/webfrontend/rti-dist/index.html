@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="./vendor/skin.css">
+  <link rel="stylesheet" href="./vendor/light.css">
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; padding: 0; background: #1a1a1a; overflow: hidden; }
+    .openlime { width: 100%; height: 100%; }
+    #rti-error { color: #ccc; font-family: sans-serif; padding: 2em; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="openlime"></div>
+  <script src="./vendor/jszip.min.js"></script>
+  <script src="./vendor/openlime.min.js"></script>
+  <script>
+    (function () {
+      const params   = new URLSearchParams(location.search);
+      const assetUrl = params.get('asset');
+      const zipName  = params.get('filename') || '';
+
+      function showError(msg) {
+        const div = document.createElement('div');
+        div.id = 'rti-error';
+        div.textContent = 'RTI konnte nicht geladen werden:\n\n' + msg;
+        document.querySelector('.openlime').innerHTML = '';
+        document.querySelector('.openlime').appendChild(div);
+      }
+
+      if (!assetUrl) { showError('Kein Asset angegeben.'); return; }
+
+      // Nur .rti.zip-Dateien: FYLR liefert ZIP-Originale unter …/original.zip
+      function isRtiZip(url, name) {
+        return /\/original\.zip$/.test(url.split('?')[0]) && /\.rti\.zip$/i.test(name);
+      }
+
+      function mimeFor(ext) {
+        return ({ json: 'application/json', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' })[ext]
+          || 'application/octet-stream';
+      }
+
+      // Laedt das ZIP per FYLR-URL, entpackt es im Browser und bedient OpenLIME
+      // ueber virtuelle URLs (fetch-Interceptor fuer info.json, img.src-Interceptor
+      // fuer Plane-Bilder). FYLRs {zippath}-Endpoint liefert 400 fuer rohe Originale.
+      function loadFromZip(zipUrl, name) {
+        const base = `${location.origin}/_rti_zip_/${Date.now().toString(36)}/`;
+
+        return fetch(zipUrl, { credentials: 'include', cache: 'no-store' })
+          .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`ZIP nicht erreichbar (HTTP\u00a0${r.status}).`)))
+          .then(buf => JSZip.loadAsync(buf))
+          .then(zip => {
+            // info.json suchen: Wurzel → Unterordner (foo.rti.zip → foo) → Tiefensuche
+            let prefix = '';
+            if (!zip.file('info.json')) {
+              const sub = name.replace(/\.(rti|unpack)\.zip$/i, '');
+              if (zip.file(sub + '/info.json')) {
+                prefix = sub + '/';
+              } else {
+                zip.forEach(p => { if (!prefix && /(?:^|\/)info\.json$/.test(p)) prefix = p.slice(0, p.lastIndexOf('/') + 1); });
+                if (!zip.file(prefix + 'info.json'))
+                  throw new Error('info.json nicht im ZIP.\nZIP erstellen: cd [rti-ordner] && zip -r foo.rti.zip .');
+              }
+            }
+
+            // Dateien relativ zum info.json-Verzeichnis als Blobs bereitstellen
+            const fileMap = {};
+            return Promise.all(
+              Object.values(zip.files)
+                .filter(f => !f.dir && (!prefix || f.name.startsWith(prefix)))
+                .map(f => f.async('arraybuffer').then(buf => {
+                  const rel = f.name.slice(prefix.length);
+                  if (rel) fileMap[base + rel] = new Blob([buf], { type: mimeFor(rel.split('.').pop().toLowerCase()) });
+                }))
+            ).then(() => {
+              // fetch-Interceptor: info.json aus dem RAM liefern
+              const _fetch = window.fetch;
+              window.fetch = (input, opts) => {
+                const url = input instanceof Request ? input.url : String(input);
+                const blob = fileMap[url];
+                return blob ? Promise.resolve(new Response(blob, { status: 200 })) : _fetch.call(window, input, opts);
+              };
+
+              // img.src-Interceptor: Plane-Bilder als Object-URLs liefern
+              // (OpenLIME nutzt document.createElement('img'), nicht new Image())
+              const sd = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+              Object.defineProperty(HTMLImageElement.prototype, 'src', {
+                configurable: true, enumerable: true,
+                get() { return sd.get.call(this); },
+                set(url) {
+                  const blob = fileMap[String(url)];
+                  sd.set.call(this, blob ? URL.createObjectURL(blob) : url);
+                }
+              });
+
+              return base + 'info.json';
+            });
+          });
+      }
+
+      function initViewer(url) {
+        const viewer = new OpenLIME.Viewer('.openlime');
+        viewer.addLayer('rti', new OpenLIME.Layer({ type: 'rti', url, layout: 'image' }));
+        OpenLIME.Skin.setUrl('./skin/skin.svg');
+        const ui = new OpenLIME.UIBasic(viewer, { showLightDirections: true });
+        ui.actions.light.active = true;
+        ui.actions.zoomin.display = ui.actions.zoomout.display =
+          ui.actions.fullscreen.display = ui.actions.home.display = true;
+      }
+
+      (isRtiZip(assetUrl, zipName) ? loadFromZip(assetUrl, zipName) : Promise.resolve(assetUrl))
+        .then(initViewer)
+        .catch(err => showError(err && err.message ? err.message : String(err)));
+    })();
+  </script>
+</body>
+</html>
