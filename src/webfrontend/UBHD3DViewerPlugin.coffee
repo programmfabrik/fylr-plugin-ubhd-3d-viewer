@@ -1,15 +1,34 @@
 PLUGIN_ID = 'fylr-plugin-ubhd-3d-viewer'
 PLUGIN_SCRIPT_SRC = if typeof document isnt 'undefined' then document.currentScript?.src else null
 
+###
+# UBHD3DViewerPlugin
+#
+# @param {Asset} asset - Das Asset, das im Viewer dargestellt werden soll.
+# @param {Object} options - Zusätzliche Optionen für das Plugin.
+# @param {string} options.target - Das DOM-Element oder jQuery-Objekt
+#   in das der Viewer eingebettet werden soll.
+# @param {boolean} options.startAutomatically - Wenn true, startet der Viewer automatisch.
+###
 class UBHD3DViewerPlugin extends AssetDetail
-	# Initialisiert das Plugin und bereitet spaetere Lazy-Loads des Viewer-Moduls vor.
-	# Der Promise-Cache verhindert, dass das Modul mehrfach parallel geladen wird.
+	# Erstellt eine neue Plugin-Instanz. Alle Argumente werden ungefiltert an die
+	# Elternklasse AssetDetail weitergegeben; fylr befuellt sie beim Registrieren
+	# des Plugins automatisch. viewerModulePromise wird beim ersten Aufruf von
+	# importViewerModule() gesetzt und verhindert, dass das Modul mehrfach geladen wird.
+	
+	#
+	#
+	#
 	constructor: (args...) ->
 		super(args...)
 		@viewerModulePromise = null
 
-	# Vereinheitlicht unterschiedliche Target-Typen auf ein echtes DOM-Element.
-	# So koennen Aufrufer jQuery-Objekte, Wrapper oder rohe Elemente uebergeben.
+	# jQuery-Objekte und CUI-Wrapper verpacken DOM-Elemente in eigene Strukturen,
+	# sodass der Rest des Plugins nicht direkt mit rohen DOM-Elementen arbeiten kann.
+	# Diese Methode prueft daher, welcher Typ uebergeben wurde: jQuery-Objekte liefern
+	# ihr erstes Element ueber [0], CUI-Wrapper ueber .get(0), alles andere wird
+	# unveraendert zurueckgegeben. So arbeiten alle Aufrufer immer mit einem echten
+	# DOM-Element, unabhaengig davon, was der Aufrufer urspruenglich uebergeben hat.
 	normalizeElement: (target) ->
 		return null unless target?
 		return target[0] if target.jquery?
@@ -56,6 +75,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 		return null unless pluginBaseUrl?
 
 		pageUrl: new URL('viewer-dist/', pluginBaseUrl).href
+		rtiPageUrl: new URL('rti-dist/index.html', pluginBaseUrl).href
 
 	# Fuegt das Viewer-Stylesheet genau einmal in den Dokumentkopf ein.
 	# Doppeltes Nachladen derselben CSS-Datei wird dadurch vermieden.
@@ -128,6 +148,11 @@ class UBHD3DViewerPlugin extends AssetDetail
 				candidate = candidates[idx]
 				idx += 1
 
+				# Probe ueberspringen fuer Assets, bei denen der Server keine HEAD/GET-Probe
+				# auf die Asset-URL erlaubt (z.B. ZIP-Inhalte in FYLR).
+				if candidate.skipProbe
+					return resolve(candidate)
+
 				@__probeUrlStatus(candidate.url).then((status) =>
 					if typeof status == 'number' and status >= 200 and status < 400
 						resolve(candidate)
@@ -157,6 +182,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 		switch extension?.toLowerCase()
 			when 'glb', 'gltf' then 'gltf'
 			when 'nxs', 'nxz' then 'nexus'
+			when 'ptm', 'rti' then 'rti'
 			else null
 
 	modelPriorityForExtension: (extension) ->
@@ -164,6 +190,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 			when 'nxs' then 6
 			when 'glb' then 5
 			when 'nxz', 'gltf' then 4
+			when 'ptm' then 3
+			when 'rti' then 2
 			else null
 
 	# Wandelt externe API-URLs moeglichst in same-origin Pfade fuer den Browser um.
@@ -200,7 +228,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 
 	# Uebersetzt eine einzelne FYLR-Version in das interne AssetInfo-Format des Plugins.
 	# Erkannt werden hier die relevanten GLB- und glTF-Varianten inklusive Priorisierung.
-	__processVersion: (version) ->
+	__processVersion: (version, variantFilename = '') ->
 		assetInfo =
 			type: null
 			url: null
@@ -216,6 +244,26 @@ class UBHD3DViewerPlugin extends AssetDetail
 			assetInfo.url = version.versions?.directory?.url + '/model.gltf'
 			assetInfo.extension = version.versions?.original?.extension
 			return assetInfo if assetInfo.url?
+
+		if version.name == 'viewer_rti' and version.class_extension == 'archive.unpack.zip'
+			assetInfo.type = 'rti'
+			assetInfo.prio = 3
+			assetInfo.url = version.versions?.directory?.url + '/info.json'
+			assetInfo.extension = version.versions?.original?.extension
+			return assetInfo if assetInfo.url?
+
+		# Direkte RTI-ZIP-Erkennung: FYLR liefert ZIP-Originale unter .../original.zip
+		# Nur Dateien mit der Endung .rti.zip werden als RTI behandelt.
+		# GLTF-ZIPs sind bereits weiter oben abgefangen und erreichen diese Stelle nicht.
+		zipUrl = @__bestVersionUrl(version)
+		if zipUrl and /\/original\.zip(?:[?#]|$)/.test(zipUrl) and /\.rti\.zip$/i.test(variantFilename)
+			assetInfo.type = 'rti'
+			assetInfo.prio = 3
+			assetInfo.url = zipUrl
+			assetInfo.extension = 'zip'
+			assetInfo.skipProbe = true
+			assetInfo.zipFilename = variantFilename if variantFilename
+			return assetInfo
 
 		extension = version.extension?.toLowerCase()
 		type = @modelTypeForExtension(extension)
@@ -250,11 +298,12 @@ class UBHD3DViewerPlugin extends AssetDetail
 		hasTypeWithoutUrl = false
 
 		for variant in variants
+			variantFilename = variant.original_filename or ''
 			for version in Object.values(variant.versions or {})
 				if version.original_filename == '3D_viewer.json'
 					defaults = version.versions?.original?.url
 				else
-					processed = @__processVersion(version)
+					processed = @__processVersion(version, variantFilename)
 					if processed and processed.type and not processed.url
 						hasTypeWithoutUrl = true
 					candidates.push(processed) if processed and processed.url
@@ -302,10 +351,10 @@ class UBHD3DViewerPlugin extends AssetDetail
 	startAutomatically: ->
 		true
 
-	getExtension: (url) ->
-		return null unless typeof url is 'string'
 	# Durchlaeuft beliebige verschachtelte Datenstrukturen und sammelt moegliche Modell-URLs ein.
 	# Rekursionstiefe und WeakSet verhindern Endlosschleifen bei zyklischen oder tiefen Objekten.
+	getExtension: (url) ->
+		return null unless typeof url is 'string'
 
 		match = url.toLowerCase().match(/\.([a-z0-9]+)(?:$|[?#])/) 
 		if match then match[1] else null
@@ -400,7 +449,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 	__mountViewer: (target, assetInfo) ->
 		urls = @getViewerUrls()
 
-		unless urls?.pageUrl?
+		unless urls?
 			console.error('[UBHD3DViewerPlugin] Unable to determine viewer asset URLs.')
 			return Promise.resolve(null)
 
@@ -417,9 +466,14 @@ class UBHD3DViewerPlugin extends AssetDetail
 		iframe.style.minHeight = '480px'
 		iframe.style.border = '0'
 
-		pageUrl = new URL(urls.pageUrl)
-		pageUrl.searchParams.set('asset', assetInfo?.url or '')
-		pageUrl.searchParams.set('config', assetInfo.defaults) if assetInfo?.defaults
+		if assetInfo?.type == 'rti'
+			pageUrl = new URL(urls.rtiPageUrl)
+			pageUrl.searchParams.set('asset', assetInfo?.url or '')
+			pageUrl.searchParams.set('filename', assetInfo.zipFilename) if assetInfo?.zipFilename
+		else
+			pageUrl = new URL(urls.pageUrl)
+			pageUrl.searchParams.set('asset', assetInfo?.url or '')
+			pageUrl.searchParams.set('config', assetInfo.defaults) if assetInfo?.defaults
 		iframe.src = pageUrl.href
 
 		container.appendChild(iframe)

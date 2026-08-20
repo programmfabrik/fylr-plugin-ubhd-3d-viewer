@@ -5,9 +5,33 @@ PLUGIN_ID = 'fylr-plugin-ubhd-3d-viewer';
 
 PLUGIN_SCRIPT_SRC = typeof document !== 'undefined' ? (ref = document.currentScript) != null ? ref.src : void 0 : null;
 
+/*
+ * UBHD3DViewerPlugin
+ *
+ * @param {Asset} asset - Das Asset, das im Viewer dargestellt werden soll.
+ * @param {Object} options - Zusätzliche Optionen für das Plugin.
+ * @param {string} options.target - Das DOM-Element oder jQuery-Objekt
+ *   in das der Viewer eingebettet werden soll.
+ * @param {boolean} options.startAutomatically - Wenn true, startet der Viewer automatisch.
+ */
 UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
   // Initialisiert das Plugin und bereitet spaetere Lazy-Loads des Viewer-Moduls vor.
   // Der Promise-Cache verhindert, dass das Modul mehrfach parallel geladen wird.
+  /*
+   * 
+   * 
+   * @param {Object} args - Die Argumente für den Konstruktor.
+   */
+  // Erstellt eine neue Plugin-Instanz und initialisiert den Viewer Modul Cache
+  // Das Plugin erbt von AssetDetail, der fylr-Basisklasse für
+  // Asset-Detail-Ansichten. Alle Argumente (asset, options usw.)
+  // werden ungefiltert an die Elternklasse weitergegeben. fylr befüllt
+  // sie beim Registrieren des Plugins automatisch.
+
+  // @viewerModulePromise startet als null und wird beim ersten Aufruf
+
+    // Initialisiert das Plugin. ViewerModulePromise verhindert, dass das 
+  // Modul mehrfach geladen wird. Siehe auch importViewerModule()
   constructor(...args) {
     super(...args);
     this.viewerModulePromise = null;
@@ -85,7 +109,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
       return null;
     }
     return {
-      pageUrl: new URL('viewer-dist/', pluginBaseUrl).href
+      pageUrl: new URL('viewer-dist/', pluginBaseUrl).href,
+      rtiPageUrl: new URL('rti-dist/index.html', pluginBaseUrl).href
     };
   }
 
@@ -204,6 +229,11 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
         }
         candidate = candidates[idx];
         idx += 1;
+        // Probe ueberspringen fuer Assets, bei denen der Server keine HEAD/GET-Probe
+        // auf die Asset-URL erlaubt (z.B. ZIP-Inhalte in FYLR).
+        if (candidate.skipProbe) {
+          return resolve(candidate);
+        }
         return this.__probeUrlStatus(candidate.url).then((status) => {
           if (typeof status === 'number' && status >= 200 && status < 400) {
             return resolve(candidate);
@@ -248,6 +278,9 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
       case 'nxs':
       case 'nxz':
         return 'nexus';
+      case 'ptm':
+      case 'rti':
+        return 'rti';
       default:
         return null;
     }
@@ -262,6 +295,10 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
       case 'nxz':
       case 'gltf':
         return 4;
+      case 'ptm':
+        return 3;
+      case 'rti':
+        return 2;
       default:
         return null;
     }
@@ -316,8 +353,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
 
   // Uebersetzt eine einzelne FYLR-Version in das interne AssetInfo-Format des Plugins.
   // Erkannt werden hier die relevanten GLB- und glTF-Varianten inklusive Priorisierung.
-  __processVersion(version) {
-    var assetInfo, extension, prio, ref1, ref2, ref3, ref4, ref5, type;
+  __processVersion(version, variantFilename = '') {
+    var assetInfo, extension, prio, ref1, ref2, ref3, ref4, ref5, ref6, ref7, ref8, ref9, type, zipUrl;
     assetInfo = {
       type: null,
       url: null,
@@ -337,7 +374,31 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
         return assetInfo;
       }
     }
-    extension = (ref5 = version.extension) != null ? ref5.toLowerCase() : void 0;
+    if (version.name === 'viewer_rti' && version.class_extension === 'archive.unpack.zip') {
+      assetInfo.type = 'rti';
+      assetInfo.prio = 3;
+      assetInfo.url = ((ref5 = version.versions) != null ? (ref6 = ref5.directory) != null ? ref6.url : void 0 : void 0) + '/info.json';
+      assetInfo.extension = (ref7 = version.versions) != null ? (ref8 = ref7.original) != null ? ref8.extension : void 0 : void 0;
+      if (assetInfo.url != null) {
+        return assetInfo;
+      }
+    }
+    // Direkte RTI-ZIP-Erkennung: FYLR liefert ZIP-Originale unter .../original.zip
+    // Nur Dateien mit der Endung .rti.zip werden als RTI behandelt.
+    // GLTF-ZIPs sind bereits weiter oben abgefangen und erreichen diese Stelle nicht.
+    zipUrl = this.__bestVersionUrl(version);
+    if (zipUrl && /\/original\.zip(?:[?#]|$)/.test(zipUrl) && /\.rti\.zip$/i.test(variantFilename)) {
+      assetInfo.type = 'rti';
+      assetInfo.prio = 3;
+      assetInfo.url = zipUrl;
+      assetInfo.extension = 'zip';
+      assetInfo.skipProbe = true;
+      if (variantFilename) {
+        assetInfo.zipFilename = variantFilename;
+      }
+      return assetInfo;
+    }
+    extension = (ref9 = version.extension) != null ? ref9.toLowerCase() : void 0;
     type = this.modelTypeForExtension(extension);
     prio = this.modelPriorityForExtension(extension);
     if (!((type != null) && (prio != null))) {
@@ -353,7 +414,7 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
   // Durchsucht Asset-Varianten aus EAS-Daten nach einem darstellbaren 3D-Modell.
   // Neben dem Haupttreffer werden Defaults und alternative Kandidaten fuer spaetere Fallbacks gesammelt.
   __easUrl(asset) {
-    var alternative, assetInfo, candidates, defaults, hasTypeWithoutUrl, i, j, k, len, len1, len2, processed, ref1, ref2, ref3, ref4, sorted, variant, variants, version;
+    var alternative, assetInfo, candidates, defaults, hasTypeWithoutUrl, i, j, k, len, len1, len2, processed, ref1, ref2, ref3, ref4, sorted, variant, variantFilename, variants, version;
     assetInfo = {
       type: null,
       url: null,
@@ -373,13 +434,14 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     hasTypeWithoutUrl = false;
     for (i = 0, len = variants.length; i < len; i++) {
       variant = variants[i];
+      variantFilename = variant.original_filename || '';
       ref1 = Object.values(variant.versions || {});
       for (j = 0, len1 = ref1.length; j < len1; j++) {
         version = ref1[j];
         if (version.original_filename === '3D_viewer.json') {
           defaults = (ref2 = version.versions) != null ? (ref3 = ref2.original) != null ? ref3.url : void 0 : void 0;
         } else {
-          processed = this.__processVersion(version);
+          processed = this.__processVersion(version, variantFilename);
           if (processed && processed.type && !processed.url) {
             hasTypeWithoutUrl = true;
           }
@@ -589,7 +651,7 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
   __mountViewer(target, assetInfo) {
     var container, iframe, pageUrl, urls;
     urls = this.getViewerUrls();
-    if ((urls != null ? urls.pageUrl : void 0) == null) {
+    if (urls == null) {
       console.error('[UBHD3DViewerPlugin] Unable to determine viewer asset URLs.');
       return Promise.resolve(null);
     }
@@ -606,10 +668,18 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     iframe.style.width = '100%';
     iframe.style.minHeight = '480px';
     iframe.style.border = '0';
-    pageUrl = new URL(urls.pageUrl);
-    pageUrl.searchParams.set('asset', (assetInfo != null ? assetInfo.url : void 0) || '');
-    if (assetInfo != null ? assetInfo.defaults : void 0) {
-      pageUrl.searchParams.set('config', assetInfo.defaults);
+    if ((assetInfo != null ? assetInfo.type : void 0) === 'rti') {
+      pageUrl = new URL(urls.rtiPageUrl);
+      pageUrl.searchParams.set('asset', (assetInfo != null ? assetInfo.url : void 0) || '');
+      if (assetInfo != null ? assetInfo.zipFilename : void 0) {
+        pageUrl.searchParams.set('filename', assetInfo.zipFilename);
+      }
+    } else {
+      pageUrl = new URL(urls.pageUrl);
+      pageUrl.searchParams.set('asset', (assetInfo != null ? assetInfo.url : void 0) || '');
+      if (assetInfo != null ? assetInfo.defaults : void 0) {
+        pageUrl.searchParams.set('config', assetInfo.defaults);
+      }
     }
     iframe.src = pageUrl.href;
     container.appendChild(iframe);
