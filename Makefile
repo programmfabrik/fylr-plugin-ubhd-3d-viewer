@@ -7,19 +7,24 @@ VIEWER_DIST_ASSETS_DIR = $(VIEWER_DIST_DIR)/assets
 SRC_DIR = src
 SRC_WEBFRONTEND_DIR = $(SRC_DIR)/webfrontend
 SRC_VIEWER_DIST_DIR = $(SRC_WEBFRONTEND_DIR)/viewer-dist
+SRC_RTI_DIST_DIR = $(SRC_WEBFRONTEND_DIR)/rti-dist
+RTI_VENDOR_DIR = $(SRC_RTI_DIST_DIR)/vendor
+OPENLIME_DIST = node_modules/openlime/dist
+JSZIP_DIST = node_modules/jszip/dist/jszip.min.js
 COFFEE_SOURCE = $(SRC_WEBFRONTEND_DIR)/UBHD3DViewerPlugin.coffee
 COFFEE_JS = $(SRC_WEBFRONTEND_DIR)/UBHD3DViewerPlugin.coffee.js
 COFFEE_BIN = node_modules/.bin/coffee
 HOST_CSS = $(SRC_WEBFRONTEND_DIR)/fylr-plugin-ubhd-3d-viewer.css
 PACKAGE_WEBFRONTEND_DIR = $(BUILD_DIR)/$(PLUGIN_NAME)/webfrontend
 PACKAGE_VIEWER_DIST_DIR = $(PACKAGE_WEBFRONTEND_DIR)/viewer-dist
+PACKAGE_RTI_DIST_DIR = $(PACKAGE_WEBFRONTEND_DIR)/rti-dist
 PACKAGE_JS = $(PACKAGE_WEBFRONTEND_DIR)/fylr-plugin-ubhd-3d-viewer.js
 PACKAGE_CSS = $(PACKAGE_WEBFRONTEND_DIR)/fylr-plugin-ubhd-3d-viewer.css
 
 all: build
 
 
-build: clean code viewer-dist
+build: clean code viewer-dist rti-vendor
 	mkdir -p $(BUILD_DIR)/$(PLUGIN_NAME)/lib/ubhd-3d-viewer $(PACKAGE_WEBFRONTEND_DIR)
 	if [ -d src ]; then cp -r src $(BUILD_DIR)/$(PLUGIN_NAME); fi
 	if [ -d l10n ]; then cp -r l10n $(BUILD_DIR)/$(PLUGIN_NAME); fi
@@ -27,6 +32,8 @@ build: clean code viewer-dist
 	cp -r $(VIEWER_DIST_DIR) $(BUILD_DIR)/$(PLUGIN_NAME)/lib/ubhd-3d-viewer/
 	rm -rf $(PACKAGE_VIEWER_DIST_DIR)
 	cp -r $(SRC_VIEWER_DIST_DIR) $(PACKAGE_VIEWER_DIST_DIR)
+	rm -rf $(PACKAGE_RTI_DIST_DIR)
+	cp -r $(SRC_RTI_DIST_DIR) $(PACKAGE_RTI_DIST_DIR)
 	cp $(COFFEE_JS) $(PACKAGE_JS)
 	cp $(HOST_CSS) $(PACKAGE_CSS)
 
@@ -73,6 +80,18 @@ viewer-dist:
 		exit 1; \
 	fi
 
+rti-vendor: $(COFFEE_BIN)
+	@if [ ! -f $(OPENLIME_DIST)/js/openlime.min.js ]; then \
+		echo "Missing openlime dist. Run 'npm ci' first."; \
+		exit 1; \
+	fi
+	mkdir -p $(RTI_VENDOR_DIR) $(SRC_RTI_DIST_DIR)/skin
+	cp $(OPENLIME_DIST)/js/openlime.min.js $(RTI_VENDOR_DIR)/openlime.min.js
+	cp $(JSZIP_DIST) $(RTI_VENDOR_DIR)/jszip.min.js
+	cp $(OPENLIME_DIST)/css/skin.css $(RTI_VENDOR_DIR)/skin.css
+	cp $(OPENLIME_DIST)/css/light.css $(RTI_VENDOR_DIR)/light.css
+	cp $(OPENLIME_DIST)/skin/skin.min.svg $(SRC_RTI_DIST_DIR)/skin/skin.svg
+
 zip: build
 	mkdir -p $(PACKAGE_STAGE_DIR)
 	cp manifest.master.yml $(PACKAGE_STAGE_DIR)/manifest.yml
@@ -88,3 +107,4 @@ clean:
 	rm -rf $(BUILD_DIR)/$(PLUGIN_NAME) $(BUILD_DIR)/$(PLUGIN_NAME).zip $(BUILD_DIR)/.package
 	rm -rf $(BUILD_DIR)/ubhd-3d-viewer $(BUILD_DIR)/ubhd-3d-viewer.zip
 	rm -rf $(SRC_VIEWER_DIST_DIR)
+	rm -rf $(RTI_VENDOR_DIR) $(SRC_RTI_DIST_DIR)/skin

@@ -4,6 +4,10 @@
   "version": "1.0.0",
   "description": "Build-time dependencies for the FYLR UBHD 3D viewer plugin.",
   "devDependencies": {
-    "coffeescript": "^2.7.0"
+    "coffeescript": "^2.7.0",
+    "openlime": "1.2.6"
+  },
+  "dependencies": {
+    "jszip": "3.10.1"
   }
 }

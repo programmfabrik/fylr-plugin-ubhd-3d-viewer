@@ -84,6 +84,8 @@ out
 dist
 .output
 src/webfrontend/viewer-dist/
+src/webfrontend/rti-dist/vendor/
+src/webfrontend/rti-dist/skin/
 
 # Gatsby files
 .cache/
