@@ -83,7 +83,6 @@ out
 .nuxt
 dist
 .output
-src/webfrontend/viewer-dist/
 src/webfrontend/rti-dist/vendor/
 src/webfrontend/rti-dist/skin/
 
