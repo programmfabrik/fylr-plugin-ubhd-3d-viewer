@@ -21,15 +21,15 @@ PACKAGE_RTI_DIST_DIR = $(PACKAGE_WEBFRONTEND_DIR)/rti-dist
 PACKAGE_JS = $(PACKAGE_WEBFRONTEND_DIR)/fylr-plugin-ubhd-3d-viewer.js
 PACKAGE_CSS = $(PACKAGE_WEBFRONTEND_DIR)/fylr-plugin-ubhd-3d-viewer.css
 
+.PHONY: all build zip zip-prebuilt build-prebuilt clean clean-prebuilt code viewer-dist rti-vendor
+
 all: build
 
 
 build: clean code viewer-dist rti-vendor
-	mkdir -p $(BUILD_DIR)/$(PLUGIN_NAME)/lib/ubhd-3d-viewer $(PACKAGE_WEBFRONTEND_DIR)
-	if [ -d src ]; then cp -r src $(BUILD_DIR)/$(PLUGIN_NAME); fi
+	mkdir -p $(PACKAGE_WEBFRONTEND_DIR)
 	if [ -d l10n ]; then cp -r l10n $(BUILD_DIR)/$(PLUGIN_NAME); fi
 	if [ -d fas_config ]; then cp -r fas_config $(BUILD_DIR)/$(PLUGIN_NAME); fi
-	cp -r $(VIEWER_DIST_DIR) $(BUILD_DIR)/$(PLUGIN_NAME)/lib/ubhd-3d-viewer/
 	rm -rf $(PACKAGE_VIEWER_DIST_DIR)
 	cp -r $(SRC_VIEWER_DIST_DIR) $(PACKAGE_VIEWER_DIST_DIR)
 	rm -rf $(PACKAGE_RTI_DIST_DIR)
@@ -93,6 +93,27 @@ rti-vendor: $(COFFEE_BIN)
 	cp $(OPENLIME_DIST)/skin/skin.min.svg $(SRC_RTI_DIST_DIR)/skin/skin.svg
 
 zip: build
+	mkdir -p $(PACKAGE_STAGE_DIR)
+	cp manifest.master.yml $(PACKAGE_STAGE_DIR)/manifest.yml
+	cp -r $(BUILD_DIR)/$(PLUGIN_NAME)/* $(PACKAGE_STAGE_DIR)/
+	cd $(BUILD_DIR)/.package && zip -r ../$(PLUGIN_NAME).zip $(PLUGIN_NAME)
+	rm -rf $(BUILD_DIR)/.package
+
+# like zip, but skips viewer-dist rebuild (uses pre-built src/webfrontend/viewer-dist)
+build-prebuilt: clean-prebuilt code rti-vendor
+	mkdir -p $(PACKAGE_WEBFRONTEND_DIR)
+	if [ -d l10n ]; then cp -r l10n $(BUILD_DIR)/$(PLUGIN_NAME); fi
+	if [ -d fas_config ]; then cp -r fas_config $(BUILD_DIR)/$(PLUGIN_NAME); fi
+	cp -r $(SRC_VIEWER_DIST_DIR) $(PACKAGE_VIEWER_DIST_DIR)
+	cp -r $(SRC_RTI_DIST_DIR) $(PACKAGE_RTI_DIST_DIR)
+	cp $(COFFEE_JS) $(PACKAGE_JS)
+	cp $(HOST_CSS) $(PACKAGE_CSS)
+
+clean-prebuilt:
+	rm -rf $(BUILD_DIR)/$(PLUGIN_NAME) $(BUILD_DIR)/$(PLUGIN_NAME).zip $(BUILD_DIR)/.package
+	rm -rf $(RTI_VENDOR_DIR) $(SRC_RTI_DIST_DIR)/skin
+
+zip-prebuilt: build-prebuilt
 	mkdir -p $(PACKAGE_STAGE_DIR)
 	cp manifest.master.yml $(PACKAGE_STAGE_DIR)/manifest.yml
 	cp -r $(BUILD_DIR)/$(PLUGIN_NAME)/* $(PACKAGE_STAGE_DIR)/

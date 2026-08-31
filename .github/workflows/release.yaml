@@ -11,8 +11,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Fix post run npm cleanup
         run: mkdir -p /home/runner/.npm; touch /home/runner/package-lock.json; touch package-lock.json
@@ -20,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v3
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies
@@ -41,7 +39,7 @@ jobs:
 
       - name: Build and Package
         shell: bash
-        run: make zip
+        run: make zip-prebuilt
 
       - name: Release
         uses: softprops/action-gh-release@v1
