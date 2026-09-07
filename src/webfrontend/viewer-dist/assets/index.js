@@ -27908,11 +27908,10 @@ class UBHD3DViewer {
   }
   reportError(message, error = null) {
     const details = error ? { message, error } : { message };
+    console.error("[UBHD3DViewer]", message, error ? error.stack || error.message || String(error) : "");
     if (typeof this.onError === "function") {
       this.onError(details);
-      return;
     }
-    console.error("[UBHD3DViewer]", message, error || "");
   }
   reportProgress(loaded, total = null) {
     if (typeof this.onProgress !== "function") {

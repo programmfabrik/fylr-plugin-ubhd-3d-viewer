@@ -15,30 +15,22 @@ PLUGIN_SCRIPT_SRC = typeof document !== 'undefined' ? (ref = document.currentScr
  * @param {boolean} options.startAutomatically - Wenn true, startet der Viewer automatisch.
  */
 UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
-  // Initialisiert das Plugin und bereitet spaetere Lazy-Loads des Viewer-Moduls vor.
-  // Der Promise-Cache verhindert, dass das Modul mehrfach parallel geladen wird.
-  /*
-   * 
-   * 
-   * @param {Object} args - Die Argumente für den Konstruktor.
-   */
-  // Erstellt eine neue Plugin-Instanz und initialisiert den Viewer Modul Cache
-  // Das Plugin erbt von AssetDetail, der fylr-Basisklasse für
-  // Asset-Detail-Ansichten. Alle Argumente (asset, options usw.)
-  // werden ungefiltert an die Elternklasse weitergegeben. fylr befüllt
-  // sie beim Registrieren des Plugins automatisch.
+  // Erstellt eine neue Plugin-Instanz. Alle Argumente werden ungefiltert an die
+  // Elternklasse AssetDetail weitergegeben; fylr befuellt sie beim Registrieren
+  // des Plugins automatisch. viewerModulePromise wird beim ersten Aufruf von
+  // importViewerModule() gesetzt und verhindert, dass das Modul mehrfach geladen wird.
 
-  // @viewerModulePromise startet als null und wird beim ersten Aufruf
-
-    // Initialisiert das Plugin. ViewerModulePromise verhindert, dass das 
-  // Modul mehrfach geladen wird. Siehe auch importViewerModule()
   constructor(...args) {
     super(...args);
     this.viewerModulePromise = null;
   }
 
-  // Vereinheitlicht unterschiedliche Target-Typen auf ein echtes DOM-Element.
-  // So koennen Aufrufer jQuery-Objekte, Wrapper oder rohe Elemente uebergeben.
+  // jQuery-Objekte und CUI-Wrapper verpacken DOM-Elemente in eigene Strukturen,
+  // sodass der Rest des Plugins nicht direkt mit rohen DOM-Elementen arbeiten kann.
+  // Diese Methode prueft daher, welcher Typ uebergeben wurde: jQuery-Objekte liefern
+  // ihr erstes Element ueber [0], CUI-Wrapper ueber .get(0), alles andere wird
+  // unveraendert zurueckgegeben. So arbeiten alle Aufrufer immer mit einem echten
+  // DOM-Element, unabhaengig davon, was der Aufrufer urspruenglich uebergeben hat.
   normalizeElement(target) {
     if (target == null) {
       return null;
@@ -515,13 +507,13 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     return true;
   }
 
+  // Durchlaeuft beliebige verschachtelte Datenstrukturen und sammelt moegliche Modell-URLs ein.
+  // Rekursionstiefe und WeakSet verhindern Endlosschleifen bei zyklischen oder tiefen Objekten.
   getExtension(url) {
     var match;
     if (typeof url !== 'string') {
       return null;
     }
-    // Durchlaeuft beliebige verschachtelte Datenstrukturen und sammelt moegliche Modell-URLs ein.
-    // Rekursionstiefe und WeakSet verhindern Endlosschleifen bei zyklischen oder tiefen Objekten.
     match = url.toLowerCase().match(/\.([a-z0-9]+)(?:$|[?#])/);
     if (match) {
       return match[1];
