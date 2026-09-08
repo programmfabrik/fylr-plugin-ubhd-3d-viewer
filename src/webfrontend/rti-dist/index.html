@@ -18,8 +18,16 @@
   <script>
     (function () {
       const params   = new URLSearchParams(location.search);
-      const assetUrl = params.get('asset');
+      const accessToken = params.get('access_token');
+      let assetUrl = params.get('asset');
       const zipName  = params.get('filename') || '';
+
+      // access_token kommt als eigener, flacher Query-Parameter (siehe UBHD3DViewerPlugin.coffee)
+      // und wird hier erst vor der Verwendung wieder an die Asset-URL angehaengt.
+      if (assetUrl && accessToken && !/[?&]access_token=/.test(assetUrl)) {
+        const separator = assetUrl.includes('?') ? '&' : '?';
+        assetUrl = `${assetUrl}${separator}access_token=${encodeURIComponent(accessToken)}`;
+      }
 
       function showError(msg) {
         const div = document.createElement('div');

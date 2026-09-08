@@ -343,6 +343,32 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     }
   }
 
+  // Trennt einen zuvor via __withAccessToken angehaengten access_token wieder von der URL ab.
+  // Damit landet der Token nicht doppelt verschachtelt in einer fremden Query-String, wenn die
+  // URL selbst als Wert eines anderen Query-Parameters (z.B. "asset") uebergeben wird - manche
+  // Reverse-Proxys/WAFs lehnen solche "?...?..."-Muster mit HTTP 400 ab.
+  __extractAccessToken(rawUrl) {
+    var err, token, u;
+    if (!rawUrl) {
+      return null;
+    }
+    try {
+      u = new URL(rawUrl, window.location.href);
+      token = u.searchParams.get('access_token');
+      if (!token) {
+        return null;
+      }
+      u.searchParams.delete('access_token');
+      return {
+        token: token,
+        url: u.pathname + u.search + u.hash
+      };
+    } catch (error1) {
+      err = error1;
+      return null;
+    }
+  }
+
   // Uebersetzt eine einzelne FYLR-Version in das interne AssetInfo-Format des Plugins.
   // Erkannt werden hier die relevanten GLB- und glTF-Varianten inklusive Priorisierung.
   __processVersion(version, variantFilename = '') {
@@ -641,7 +667,7 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
   // Bindet den eigentlichen Viewer als Iframe in das Ziel-Element ein.
   // Asset-URL und optionale Default-Konfiguration werden ueber Query-Parameter uebergeben.
   __mountViewer(target, assetInfo) {
-    var container, iframe, pageUrl, urls;
+    var assetUrl, configUrl, container, extractedAsset, extractedConfig, iframe, pageUrl, token, urls;
     urls = this.getViewerUrls();
     if (urls == null) {
       console.error('[UBHD3DViewerPlugin] Unable to determine viewer asset URLs.');
@@ -660,18 +686,41 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     iframe.style.width = '100%';
     iframe.style.minHeight = '480px';
     iframe.style.border = '0';
+    // access_token wird aus asset-/config-URL herausgeloest und separat als eigener,
+    // flacher Query-Parameter angehaengt (statt verschachtelt in "asset"/"config"),
+    // damit die Iframe-URL selbst keine doppelte Query-String-Verschachtelung enthaelt.
+    assetUrl = (assetInfo != null ? assetInfo.url : void 0) || '';
+    configUrl = (assetInfo != null ? assetInfo.defaults : void 0) || '';
+    token = null;
+    extractedAsset = this.__extractAccessToken(assetUrl);
+    if (extractedAsset != null) {
+      assetUrl = extractedAsset.url;
+      token = extractedAsset.token;
+    }
+    if (configUrl) {
+      extractedConfig = this.__extractAccessToken(configUrl);
+      if (extractedConfig != null) {
+        configUrl = extractedConfig.url;
+        if (token == null) {
+          token = extractedConfig.token;
+        }
+      }
+    }
     if ((assetInfo != null ? assetInfo.type : void 0) === 'rti') {
       pageUrl = new URL(urls.rtiPageUrl);
-      pageUrl.searchParams.set('asset', (assetInfo != null ? assetInfo.url : void 0) || '');
+      pageUrl.searchParams.set('asset', assetUrl);
       if (assetInfo != null ? assetInfo.zipFilename : void 0) {
         pageUrl.searchParams.set('filename', assetInfo.zipFilename);
       }
     } else {
       pageUrl = new URL(urls.pageUrl);
-      pageUrl.searchParams.set('asset', (assetInfo != null ? assetInfo.url : void 0) || '');
-      if (assetInfo != null ? assetInfo.defaults : void 0) {
-        pageUrl.searchParams.set('config', assetInfo.defaults);
+      pageUrl.searchParams.set('asset', assetUrl);
+      if (configUrl) {
+        pageUrl.searchParams.set('config', configUrl);
       }
+    }
+    if (token) {
+      pageUrl.searchParams.set('access_token', token);
     }
     iframe.src = pageUrl.href;
     container.appendChild(iframe);

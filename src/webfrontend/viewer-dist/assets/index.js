@@ -28102,8 +28102,16 @@ function initUBHD3DViewer(options = {}) {
     missingAssetMessage = "Missing asset URL. Example: ?asset=/path/to/model.gltf"
   } = options;
   const params = new URLSearchParams(search);
-  const assetUrl = params.get("asset");
-  const configFilePath = params.get("config");
+  const accessToken = params.get("access_token");
+  const withAccessToken = (url) => {
+    if (!url || !accessToken || /[?&]access_token=/.test(url)) {
+      return url;
+    }
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`;
+  };
+  const assetUrl = withAccessToken(params.get("asset"));
+  const configFilePath = withAccessToken(params.get("config"));
   const mode = ((_a = params.get("mode")) == null ? void 0 : _a.toLowerCase()) || null;
   const canvas = document.querySelector(canvasSelector);
   return initEmbeddedUBHD3DViewer({

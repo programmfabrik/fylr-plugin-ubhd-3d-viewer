@@ -226,6 +226,22 @@ class UBHD3DViewerPlugin extends AssetDetail
 			separator = if rawUrl.indexOf('?') == -1 then '?' else '&'
 			rawUrl + separator + 'access_token=' + encodeURIComponent(token)
 
+	# Trennt einen zuvor via __withAccessToken angehaengten access_token wieder von der URL ab.
+	# Damit landet der Token nicht doppelt verschachtelt in einer fremden Query-String, wenn die
+	# URL selbst als Wert eines anderen Query-Parameters (z.B. "asset") uebergeben wird - manche
+	# Reverse-Proxys/WAFs lehnen solche "?...?..."-Muster mit HTTP 400 ab.
+	__extractAccessToken: (rawUrl) ->
+		return null unless rawUrl
+
+		try
+			u = new URL(rawUrl, window.location.href)
+			token = u.searchParams.get('access_token')
+			return null unless token
+			u.searchParams.delete('access_token')
+			token: token, url: u.pathname + u.search + u.hash
+		catch err
+			null
+
 	# Uebersetzt eine einzelne FYLR-Version in das interne AssetInfo-Format des Plugins.
 	# Erkannt werden hier die relevanten GLB- und glTF-Varianten inklusive Priorisierung.
 	__processVersion: (version, variantFilename = '') ->
@@ -466,14 +482,33 @@ class UBHD3DViewerPlugin extends AssetDetail
 		iframe.style.minHeight = '480px'
 		iframe.style.border = '0'
 
+		# access_token wird aus asset-/config-URL herausgeloest und separat als eigener,
+		# flacher Query-Parameter angehaengt (statt verschachtelt in "asset"/"config"),
+		# damit die Iframe-URL selbst keine doppelte Query-String-Verschachtelung enthaelt.
+		assetUrl = assetInfo?.url or ''
+		configUrl = assetInfo?.defaults or ''
+		token = null
+
+		extractedAsset = @__extractAccessToken(assetUrl)
+		if extractedAsset?
+			assetUrl = extractedAsset.url
+			token = extractedAsset.token
+
+		if configUrl
+			extractedConfig = @__extractAccessToken(configUrl)
+			if extractedConfig?
+				configUrl = extractedConfig.url
+				token = extractedConfig.token unless token?
+
 		if assetInfo?.type == 'rti'
 			pageUrl = new URL(urls.rtiPageUrl)
-			pageUrl.searchParams.set('asset', assetInfo?.url or '')
+			pageUrl.searchParams.set('asset', assetUrl)
 			pageUrl.searchParams.set('filename', assetInfo.zipFilename) if assetInfo?.zipFilename
 		else
 			pageUrl = new URL(urls.pageUrl)
-			pageUrl.searchParams.set('asset', assetInfo?.url or '')
-			pageUrl.searchParams.set('config', assetInfo.defaults) if assetInfo?.defaults
+			pageUrl.searchParams.set('asset', assetUrl)
+			pageUrl.searchParams.set('config', configUrl) if configUrl
+		pageUrl.searchParams.set('access_token', token) if token
 		iframe.src = pageUrl.href
 
 		container.appendChild(iframe)
