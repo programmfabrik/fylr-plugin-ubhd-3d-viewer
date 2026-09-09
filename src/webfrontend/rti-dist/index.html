@@ -29,7 +29,10 @@
         assetUrl = `${assetUrl}${separator}access_token=${encodeURIComponent(accessToken)}`;
       }
 
+      console.debug('[UBHD3DViewer:rti] location.search=', location.search, 'zipName=', zipName, 'access_token present=', !!accessToken);
+
       function showError(msg) {
+        console.error('[UBHD3DViewer:rti]', msg);
         const div = document.createElement('div');
         div.id = 'rti-error';
         div.textContent = 'RTI konnte nicht geladen werden:\n\n' + msg;
@@ -54,9 +57,13 @@
       // fuer Plane-Bilder). FYLRs {zippath}-Endpoint liefert 400 fuer rohe Originale.
       function loadFromZip(zipUrl, name) {
         const base = `${location.origin}/_rti_zip_/${Date.now().toString(36)}/`;
+        console.debug('[UBHD3DViewer:rti] loadFromZip: fetching', zipUrl);
 
         return fetch(zipUrl, { credentials: 'include', cache: 'no-store' })
-          .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`ZIP nicht erreichbar (HTTP\u00a0${r.status}).`)))
+          .then(r => {
+            console.debug('[UBHD3DViewer:rti] loadFromZip: fetch status=', r.status, 'for', zipUrl);
+            return r.ok ? r.arrayBuffer() : Promise.reject(new Error(`ZIP nicht erreichbar (HTTP\u00a0${r.status}).`));
+          })
           .then(buf => JSZip.loadAsync(buf))
           .then(zip => {
             // info.json suchen: Wurzel → Unterordner (foo.rti.zip → foo) → Tiefensuche
@@ -108,6 +115,7 @@
       }
 
       function initViewer(url) {
+        console.debug('[UBHD3DViewer:rti] initViewer: url=', url);
         const viewer = new OpenLIME.Viewer('.openlime');
         viewer.addLayer('rti', new OpenLIME.Layer({ type: 'rti', url, layout: 'image' }));
         OpenLIME.Skin.setUrl('./skin/skin.svg');
@@ -117,7 +125,27 @@
           ui.actions.fullscreen.display = ui.actions.home.display = true;
       }
 
-      (isRtiZip(assetUrl, zipName) ? loadFromZip(assetUrl, zipName) : Promise.resolve(assetUrl))
+      // OpenLIME erwartet an dieser URL ein Web-RTI-Manifest (info.json) und parst dessen Inhalt
+      // direkt als JSON. Rohe .rti/.ptm-Originale (ohne vorherige Relight-Konvertierung) sind kein
+      // JSON, was in OpenLIME sonst als unbehandelter "JSON.parse"-Fehler ohne Nutzerfeedback endet.
+      // Deshalb hier vorab pruefen und eine verstaendliche Fehlermeldung anzeigen.
+      function validateInfoJson(url) {
+        return fetch(url, { credentials: 'include', cache: 'no-store' })
+          .then(r => {
+            if (!r.ok) throw new Error(`Manifest nicht erreichbar (HTTP\u00a0${r.status}).`);
+            return r.text();
+          })
+          .then(text => {
+            try {
+              JSON.parse(text);
+            } catch (e) {
+              throw new Error('Diese Datei ist kein gueltiges Web-RTI-Manifest (info.json). Rohe .rti/.ptm-Originale koennen nicht direkt angezeigt werden - sie muessen zuerst ueber das Rezept "RTI-Viewer (Relight)" in ein Web-RTI-Paket (info.json + Bilder, als ZIP) konvertiert werden.');
+            }
+            return url;
+          });
+      }
+
+      (isRtiZip(assetUrl, zipName) ? loadFromZip(assetUrl, zipName) : validateInfoJson(assetUrl))
         .then(initViewer)
         .catch(err => showError(err && err.message ? err.message : String(err)));
     })();

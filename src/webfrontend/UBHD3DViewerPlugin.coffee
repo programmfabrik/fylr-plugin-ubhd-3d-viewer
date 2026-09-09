@@ -60,22 +60,36 @@ class UBHD3DViewerPlugin extends AssetDetail
 	getPluginBaseUrl: ->
 		pluginBaseUrl = ez5?.pluginManager?.getPlugin?(PLUGIN_ID)?.getBaseURL?()
 		normalized = @normalizePluginBaseUrl(pluginBaseUrl)
-		return normalized if normalized?
+		if normalized?
+			console.debug('[UBHD3DViewerPlugin] getPluginBaseUrl: resolved via pluginManager', normalized)
+			return normalized
 
 		normalized = @normalizePluginBaseUrl(PLUGIN_SCRIPT_SRC)
-		return normalized if normalized?
+		if normalized?
+			console.debug('[UBHD3DViewerPlugin] getPluginBaseUrl: resolved via currentScript', normalized)
+			return normalized
 
 		script = @getPluginScript()
-		@normalizePluginBaseUrl(script?.src)
+		normalized = @normalizePluginBaseUrl(script?.src)
+		if normalized?
+			console.debug('[UBHD3DViewerPlugin] getPluginBaseUrl: resolved via DOM script fallback', normalized)
+		else
+			console.error('[UBHD3DViewerPlugin] getPluginBaseUrl: could not resolve a plugin base URL (pluginManager, currentScript and DOM fallback all failed).')
+		normalized
 
 	# Leitet aus der Plugin-Basis die URL zum eingebetteten Viewer-Paket ab.
 	# Ohne gueltige Basis-URL kann der Viewer spaeter nicht in einem Iframe geladen werden.
 	getViewerUrls: ->
 		pluginBaseUrl = @getPluginBaseUrl()
-		return null unless pluginBaseUrl?
+		unless pluginBaseUrl?
+			console.error('[UBHD3DViewerPlugin] getViewerUrls: no plugin base URL available, viewer cannot be mounted.')
+			return null
 
-		pageUrl: new URL('viewer-dist/', pluginBaseUrl).href
-		rtiPageUrl: new URL('rti-dist/index.html', pluginBaseUrl).href
+		urls =
+			pageUrl: new URL('viewer-dist/index.html', pluginBaseUrl).href
+			rtiPageUrl: new URL('rti-dist/index.html', pluginBaseUrl).href
+		console.debug('[UBHD3DViewerPlugin] getViewerUrls:', urls)
+		urls
 
 	# Fuegt das Viewer-Stylesheet genau einmal in den Dokumentkopf ein.
 	# Doppeltes Nachladen derselben CSS-Datei wird dadurch vermieden.
@@ -105,6 +119,10 @@ class UBHD3DViewerPlugin extends AssetDetail
 		new Promise (resolve) ->
 			return resolve(null) unless url
 
+			logResult = (status) ->
+				console.debug('[UBHD3DViewerPlugin] __probeUrlStatus:', status, url)
+				resolve(status)
+
 			try
 				if window.fetch?
 					headOpts = { method: 'HEAD', cache: 'no-store', credentials: 'include' }
@@ -112,23 +130,30 @@ class UBHD3DViewerPlugin extends AssetDetail
 					fetch(url, headOpts).then((res) ->
 						status = res.status
 						if status == 405 or status == 501
-							fetch(url, getOpts).then((r2) -> resolve(r2.status)).catch((_) -> resolve(null))
+							fetch(url, getOpts).then((r2) -> logResult(r2.status)).catch((err) ->
+								console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: GET fallback failed for', url, err)
+								resolve(null)
+							)
 						else
-							resolve(status)
-					).catch((_) ->
-						fetch(url, getOpts).then((r2) -> resolve(r2.status)).catch((__) -> resolve(null))
+							logResult(status)
+					).catch((err) ->
+						console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: HEAD failed for', url, err)
+						fetch(url, getOpts).then((r2) -> logResult(r2.status)).catch((err2) ->
+							console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: GET fallback also failed for', url, err2)
+							resolve(null)
+						)
 					)
 					return
 
 				if window.$?.ajax?
 					$.ajax({ url: url, type: 'HEAD', cache: false, xhrFields: { withCredentials: true } }).done((_) ->
-						resolve(200)
+						logResult(200)
 					).fail((xhr, _status, _err) ->
-						resolve(xhr?.status ? null)
+						logResult(xhr?.status ? null)
 					)
 					return
 			catch err
-				# ignore
+				console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: unexpected error probing', url, err)
 
 			resolve(null)
 
@@ -137,13 +162,22 @@ class UBHD3DViewerPlugin extends AssetDetail
 	__pickFirstAccessible: (assetInfos) ->
 		new Promise (resolve) =>
 			candidates = (assetInfos or []).filter((assetInfo) -> assetInfo?.url)
-			return resolve(null) unless candidates.length
+			unless candidates.length
+				console.error('[UBHD3DViewerPlugin] __pickFirstAccessible: no candidates with a URL were provided.', assetInfos)
+				return resolve(null)
+			console.debug('[UBHD3DViewerPlugin] __pickFirstAccessible: probing', candidates.length, 'candidate(s)', candidates.map((c) -> c.url))
 
 			unknown = []
 			idx = 0
 
 			checkNext = =>
-				return resolve(unknown[0] ? null) if idx >= candidates.length
+				if idx >= candidates.length
+					chosen = unknown[0] ? null
+					if chosen
+						console.debug('[UBHD3DViewerPlugin] __pickFirstAccessible: falling back to unverified candidate', chosen.url)
+					else
+						console.error('[UBHD3DViewerPlugin] __pickFirstAccessible: none of the', candidates.length, 'candidate(s) were accessible.')
+					return resolve(chosen)
 
 				candidate = candidates[idx]
 				idx += 1
@@ -151,6 +185,7 @@ class UBHD3DViewerPlugin extends AssetDetail
 				# Probe ueberspringen fuer Assets, bei denen der Server keine HEAD/GET-Probe
 				# auf die Asset-URL erlaubt (z.B. ZIP-Inhalte in FYLR).
 				if candidate.skipProbe
+					console.debug('[UBHD3DViewerPlugin] __pickFirstAccessible: skipping probe for', candidate.url)
 					return resolve(candidate)
 
 				@__probeUrlStatus(candidate.url).then((status) =>
@@ -163,7 +198,8 @@ class UBHD3DViewerPlugin extends AssetDetail
 					else
 						unknown.push(candidate)
 						checkNext()
-				).catch((_) =>
+				).catch((err) =>
+					console.warn('[UBHD3DViewerPlugin] __pickFirstAccessible: probe rejected for', candidate.url, err)
 					unknown.push(candidate)
 					checkNext()
 				)
@@ -331,11 +367,13 @@ class UBHD3DViewerPlugin extends AssetDetail
 			assetInfo.alternatives = sorted.slice(1)
 			for alternative in assetInfo.alternatives
 				alternative.defaults = defaults if defaults
+			console.debug('[UBHD3DViewerPlugin] __easUrl: found', candidates.length, 'candidate(s), chose type=', assetInfo.type, 'url=', assetInfo.url)
 			return assetInfo
 
 		if hasTypeWithoutUrl
 			assetInfo.type = 'pending'
 			assetInfo.defaults = defaults if defaults
+			console.debug('[UBHD3DViewerPlugin] __easUrl: found a matching type but no URL yet (pending).')
 
 		assetInfo
 
@@ -466,11 +504,13 @@ class UBHD3DViewerPlugin extends AssetDetail
 		urls = @getViewerUrls()
 
 		unless urls?
-			console.error('[UBHD3DViewerPlugin] Unable to determine viewer asset URLs.')
+			console.error('[UBHD3DViewerPlugin] __mountViewer: unable to determine viewer asset URLs.')
 			return Promise.resolve(null)
 
 		container = @normalizeElement(target)
-		return Promise.resolve(null) unless container?
+		unless container?
+			console.error('[UBHD3DViewerPlugin] __mountViewer: target element could not be normalized to a DOM node.', target)
+			return Promise.resolve(null)
 		container.innerHTML = ''
 		container.style.minHeight = '480px'
 
@@ -511,6 +551,24 @@ class UBHD3DViewerPlugin extends AssetDetail
 		pageUrl.searchParams.set('access_token', token) if token
 		iframe.src = pageUrl.href
 
+		# access_token wird bewusst nicht mitgeloggt (nur Praesenz + Laenge), um das Secret nicht im Log zu exponieren.
+		console.debug('[UBHD3DViewerPlugin] __mountViewer: assetInfo.type=', assetInfo?.type, 'asset=', assetUrl, 'config=', configUrl or null, 'access_token present=', !!token, token?.length)
+		console.debug('[UBHD3DViewerPlugin] __mountViewer: final iframe.src=', iframe.src)
+
+		iframe.addEventListener('load', =>
+			console.debug('[UBHD3DViewerPlugin] __mountViewer: iframe load event fired for', iframe.src)
+			try
+				doc = iframe.contentDocument
+				if doc?
+					bodyText = doc.body?.innerText?.trim().slice(0, 300)
+					console.debug('[UBHD3DViewerPlugin] __mountViewer: iframe document title=', doc.title, 'body snippet=', bodyText)
+			catch err
+				console.debug('[UBHD3DViewerPlugin] __mountViewer: could not inspect iframe document (likely cross-origin)', err)
+		)
+		iframe.addEventListener('error', (err) ->
+			console.error('[UBHD3DViewerPlugin] __mountViewer: iframe error event fired for', iframe.src, err)
+		)
+
 		container.appendChild(iframe)
 		Promise.resolve(iframe)
 
@@ -520,19 +578,25 @@ class UBHD3DViewerPlugin extends AssetDetail
 		super()
 		assetInfo = @__easUrl(@asset)
 		assetInfo = @fallbackAssetInfo(@asset) unless assetInfo?.url or assetInfo?.type
+		console.debug('[UBHD3DViewerPlugin] createMarkup: initial assetInfo type=', assetInfo?.type, 'url=', assetInfo?.url)
 		request = @__fetchFullAssetInfo()
 
 		if request?
 			request.done (assetServerData) =>
 				if assetServerData?.error
+					console.warn('[UBHD3DViewerPlugin] createMarkup: EAS full-asset request returned an error payload, falling back to initial assetInfo.', assetServerData.error)
 					@__createMarkup(assetInfo) if assetInfo?.url
 					return
+				console.debug('[UBHD3DViewerPlugin] createMarkup: EAS full-asset request succeeded, re-deriving assetInfo from full data.')
 				@__createMarkup(null, assetServerData)
-			.fail =>
+			.fail (jqXHR, textStatus, errorThrown) =>
+				console.error('[UBHD3DViewerPlugin] createMarkup: EAS full-asset request failed.', textStatus, errorThrown, jqXHR?.status)
 				@__createMarkup(assetInfo) if assetInfo?.url
 			return
 
-		return if not assetInfo?.url and assetInfo?.type
+		if not assetInfo?.url and assetInfo?.type
+			console.debug('[UBHD3DViewerPlugin] createMarkup: assetInfo has type', assetInfo.type, 'but no url yet (pending), waiting for later update.')
+			return
 		@__createMarkup(assetInfo) if assetInfo?.url
 		return
 
@@ -542,10 +606,17 @@ class UBHD3DViewerPlugin extends AssetDetail
 		if not assetInfo and assetServerData
 			assetInfo = @__easUrl(assetServerData)
 			assetInfo = @fallbackAssetInfo(assetServerData) unless assetInfo?.url and assetInfo?.type
-			return unless assetInfo?.url and assetInfo?.type
+			unless assetInfo?.url and assetInfo?.type
+				console.error('[UBHD3DViewerPlugin] __createMarkup: could not derive a usable assetInfo (url+type) from full EAS asset data.', assetServerData)
+				return
 
-		return unless assetInfo?.url or assetInfo?.type
-		return if not assetInfo.url and assetInfo.type
+		unless assetInfo?.url or assetInfo?.type
+			console.error('[UBHD3DViewerPlugin] __createMarkup: no assetInfo url or type available, aborting mount.')
+			return
+		if not assetInfo.url and assetInfo.type
+			console.debug('[UBHD3DViewerPlugin] __createMarkup: assetInfo is pending (type set, no url yet), aborting mount for now.')
+			return
+		console.debug('[UBHD3DViewerPlugin] __createMarkup: proceeding with assetInfo type=', assetInfo.type, 'url=', assetInfo.url, 'alternatives=', (assetInfo.alternatives or []).length)
 
 		assetInfo.url = @__sameOriginUrl(assetInfo.url)
 		assetInfo.url = @__withAccessToken(assetInfo.url)

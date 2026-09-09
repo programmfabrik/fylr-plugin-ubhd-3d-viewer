@@ -82,28 +82,39 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     pluginBaseUrl = typeof ez5 !== "undefined" && ez5 !== null ? (ref1 = ez5.pluginManager) != null ? typeof ref1.getPlugin === "function" ? (ref2 = ref1.getPlugin(PLUGIN_ID)) != null ? typeof ref2.getBaseURL === "function" ? ref2.getBaseURL() : void 0 : void 0 : void 0 : void 0 : void 0;
     normalized = this.normalizePluginBaseUrl(pluginBaseUrl);
     if (normalized != null) {
+      console.debug('[UBHD3DViewerPlugin] getPluginBaseUrl: resolved via pluginManager', normalized);
       return normalized;
     }
     normalized = this.normalizePluginBaseUrl(PLUGIN_SCRIPT_SRC);
     if (normalized != null) {
+      console.debug('[UBHD3DViewerPlugin] getPluginBaseUrl: resolved via currentScript', normalized);
       return normalized;
     }
     script = this.getPluginScript();
-    return this.normalizePluginBaseUrl(script != null ? script.src : void 0);
+    normalized = this.normalizePluginBaseUrl(script != null ? script.src : void 0);
+    if (normalized != null) {
+      console.debug('[UBHD3DViewerPlugin] getPluginBaseUrl: resolved via DOM script fallback', normalized);
+    } else {
+      console.error('[UBHD3DViewerPlugin] getPluginBaseUrl: could not resolve a plugin base URL (pluginManager, currentScript and DOM fallback all failed).');
+    }
+    return normalized;
   }
 
   // Leitet aus der Plugin-Basis die URL zum eingebetteten Viewer-Paket ab.
   // Ohne gueltige Basis-URL kann der Viewer spaeter nicht in einem Iframe geladen werden.
   getViewerUrls() {
-    var pluginBaseUrl;
+    var pluginBaseUrl, urls;
     pluginBaseUrl = this.getPluginBaseUrl();
     if (pluginBaseUrl == null) {
+      console.error('[UBHD3DViewerPlugin] getViewerUrls: no plugin base URL available, viewer cannot be mounted.');
       return null;
     }
-    return {
-      pageUrl: new URL('viewer-dist/', pluginBaseUrl).href,
+    urls = {
+      pageUrl: new URL('viewer-dist/index.html', pluginBaseUrl).href,
       rtiPageUrl: new URL('rti-dist/index.html', pluginBaseUrl).href
     };
+    console.debug('[UBHD3DViewerPlugin] getViewerUrls:', urls);
+    return urls;
   }
 
   // Fuegt das Viewer-Stylesheet genau einmal in den Dokumentkopf ein.
@@ -137,10 +148,14 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
   // Die Funktion versucht bevorzugt HEAD und faellt bei Bedarf auf einen kleinen GET-Request zurueck.
   __probeUrlStatus(url) {
     return new Promise(function(resolve) {
-      var err, getOpts, headOpts, ref1;
+      var err, getOpts, headOpts, logResult, ref1;
       if (!url) {
         return resolve(null);
       }
+      logResult = function(status) {
+        console.debug('[UBHD3DViewerPlugin] __probeUrlStatus:', status, url);
+        return resolve(status);
+      };
       try {
         if (window.fetch != null) {
           headOpts = {
@@ -161,17 +176,20 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
             status = res.status;
             if (status === 405 || status === 501) {
               return fetch(url, getOpts).then(function(r2) {
-                return resolve(r2.status);
-              }).catch(function(_) {
+                return logResult(r2.status);
+              }).catch(function(err) {
+                console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: GET fallback failed for', url, err);
                 return resolve(null);
               });
             } else {
-              return resolve(status);
+              return logResult(status);
             }
-          }).catch(function(_) {
+          }).catch(function(err) {
+            console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: HEAD failed for', url, err);
             return fetch(url, getOpts).then(function(r2) {
-              return resolve(r2.status);
-            }).catch(function(__) {
+              return logResult(r2.status);
+            }).catch(function(err2) {
+              console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: GET fallback also failed for', url, err2);
               return resolve(null);
             });
           });
@@ -186,17 +204,17 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
               withCredentials: true
             }
           }).done(function(_) {
-            return resolve(200);
+            return logResult(200);
           }).fail(function(xhr, _status, _err) {
             var ref2;
-            return resolve((ref2 = xhr != null ? xhr.status : void 0) != null ? ref2 : null);
+            return logResult((ref2 = xhr != null ? xhr.status : void 0) != null ? ref2 : null);
           });
           return;
         }
       } catch (error1) {
         err = error1;
+        console.warn('[UBHD3DViewerPlugin] __probeUrlStatus: unexpected error probing', url, err);
       }
-      // ignore
       return resolve(null);
     });
   }
@@ -210,20 +228,31 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
         return assetInfo != null ? assetInfo.url : void 0;
       });
       if (!candidates.length) {
+        console.error('[UBHD3DViewerPlugin] __pickFirstAccessible: no candidates with a URL were provided.', assetInfos);
         return resolve(null);
       }
+      console.debug('[UBHD3DViewerPlugin] __pickFirstAccessible: probing', candidates.length, 'candidate(s)', candidates.map(function(c) {
+        return c.url;
+      }));
       unknown = [];
       idx = 0;
       checkNext = () => {
-        var candidate, ref1;
+        var candidate, chosen, ref1;
         if (idx >= candidates.length) {
-          return resolve((ref1 = unknown[0]) != null ? ref1 : null);
+          chosen = (ref1 = unknown[0]) != null ? ref1 : null;
+          if (chosen) {
+            console.debug('[UBHD3DViewerPlugin] __pickFirstAccessible: falling back to unverified candidate', chosen.url);
+          } else {
+            console.error('[UBHD3DViewerPlugin] __pickFirstAccessible: none of the', candidates.length, 'candidate(s) were accessible.');
+          }
+          return resolve(chosen);
         }
         candidate = candidates[idx];
         idx += 1;
         // Probe ueberspringen fuer Assets, bei denen der Server keine HEAD/GET-Probe
         // auf die Asset-URL erlaubt (z.B. ZIP-Inhalte in FYLR).
         if (candidate.skipProbe) {
+          console.debug('[UBHD3DViewerPlugin] __pickFirstAccessible: skipping probe for', candidate.url);
           return resolve(candidate);
         }
         return this.__probeUrlStatus(candidate.url).then((status) => {
@@ -237,7 +266,8 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
             unknown.push(candidate);
             return checkNext();
           }
-        }).catch((_) => {
+        }).catch((err) => {
+          console.warn('[UBHD3DViewerPlugin] __pickFirstAccessible: probe rejected for', candidate.url, err);
           unknown.push(candidate);
           return checkNext();
         });
@@ -483,6 +513,7 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
           alternative.defaults = defaults;
         }
       }
+      console.debug('[UBHD3DViewerPlugin] __easUrl: found', candidates.length, 'candidate(s), chose type=', assetInfo.type, 'url=', assetInfo.url);
       return assetInfo;
     }
     if (hasTypeWithoutUrl) {
@@ -490,6 +521,7 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
       if (defaults) {
         assetInfo.defaults = defaults;
       }
+      console.debug('[UBHD3DViewerPlugin] __easUrl: found a matching type but no URL yet (pending).');
     }
     return assetInfo;
   }
@@ -670,11 +702,12 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     var assetUrl, configUrl, container, extractedAsset, extractedConfig, iframe, pageUrl, token, urls;
     urls = this.getViewerUrls();
     if (urls == null) {
-      console.error('[UBHD3DViewerPlugin] Unable to determine viewer asset URLs.');
+      console.error('[UBHD3DViewerPlugin] __mountViewer: unable to determine viewer asset URLs.');
       return Promise.resolve(null);
     }
     container = this.normalizeElement(target);
     if (container == null) {
+      console.error('[UBHD3DViewerPlugin] __mountViewer: target element could not be normalized to a DOM node.', target);
       return Promise.resolve(null);
     }
     container.innerHTML = '';
@@ -723,6 +756,26 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
       pageUrl.searchParams.set('access_token', token);
     }
     iframe.src = pageUrl.href;
+    // access_token wird bewusst nicht mitgeloggt (nur Praesenz + Laenge), um das Secret nicht im Log zu exponieren.
+    console.debug('[UBHD3DViewerPlugin] __mountViewer: assetInfo.type=', assetInfo != null ? assetInfo.type : void 0, 'asset=', assetUrl, 'config=', configUrl || null, 'access_token present=', !!token, token != null ? token.length : void 0);
+    console.debug('[UBHD3DViewerPlugin] __mountViewer: final iframe.src=', iframe.src);
+    iframe.addEventListener('load', () => {
+      var bodyText, doc, err, ref1, ref2;
+      console.debug('[UBHD3DViewerPlugin] __mountViewer: iframe load event fired for', iframe.src);
+      try {
+        doc = iframe.contentDocument;
+        if (doc != null) {
+          bodyText = (ref1 = doc.body) != null ? (ref2 = ref1.innerText) != null ? ref2.trim().slice(0, 300) : void 0 : void 0;
+          return console.debug('[UBHD3DViewerPlugin] __mountViewer: iframe document title=', doc.title, 'body snippet=', bodyText);
+        }
+      } catch (error1) {
+        err = error1;
+        return console.debug('[UBHD3DViewerPlugin] __mountViewer: could not inspect iframe document (likely cross-origin)', err);
+      }
+    });
+    iframe.addEventListener('error', function(err) {
+      return console.error('[UBHD3DViewerPlugin] __mountViewer: iframe error event fired for', iframe.src, err);
+    });
     container.appendChild(iframe);
     return Promise.resolve(iframe);
   }
@@ -736,17 +789,21 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
     if (!((assetInfo != null ? assetInfo.url : void 0) || (assetInfo != null ? assetInfo.type : void 0))) {
       assetInfo = this.fallbackAssetInfo(this.asset);
     }
+    console.debug('[UBHD3DViewerPlugin] createMarkup: initial assetInfo type=', assetInfo != null ? assetInfo.type : void 0, 'url=', assetInfo != null ? assetInfo.url : void 0);
     request = this.__fetchFullAssetInfo();
     if (request != null) {
       request.done((assetServerData) => {
         if (assetServerData != null ? assetServerData.error : void 0) {
+          console.warn('[UBHD3DViewerPlugin] createMarkup: EAS full-asset request returned an error payload, falling back to initial assetInfo.', assetServerData.error);
           if (assetInfo != null ? assetInfo.url : void 0) {
             this.__createMarkup(assetInfo);
           }
           return;
         }
+        console.debug('[UBHD3DViewerPlugin] createMarkup: EAS full-asset request succeeded, re-deriving assetInfo from full data.');
         return this.__createMarkup(null, assetServerData);
-      }).fail(() => {
+      }).fail((jqXHR, textStatus, errorThrown) => {
+        console.error('[UBHD3DViewerPlugin] createMarkup: EAS full-asset request failed.', textStatus, errorThrown, jqXHR != null ? jqXHR.status : void 0);
         if (assetInfo != null ? assetInfo.url : void 0) {
           return this.__createMarkup(assetInfo);
         }
@@ -754,6 +811,7 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
       return;
     }
     if (!(assetInfo != null ? assetInfo.url : void 0) && (assetInfo != null ? assetInfo.type : void 0)) {
+      console.debug('[UBHD3DViewerPlugin] createMarkup: assetInfo has type', assetInfo.type, 'but no url yet (pending), waiting for later update.');
       return;
     }
     if (assetInfo != null ? assetInfo.url : void 0) {
@@ -771,15 +829,19 @@ UBHD3DViewerPlugin = class UBHD3DViewerPlugin extends AssetDetail {
         assetInfo = this.fallbackAssetInfo(assetServerData);
       }
       if (!((assetInfo != null ? assetInfo.url : void 0) && (assetInfo != null ? assetInfo.type : void 0))) {
+        console.error('[UBHD3DViewerPlugin] __createMarkup: could not derive a usable assetInfo (url+type) from full EAS asset data.', assetServerData);
         return;
       }
     }
     if (!((assetInfo != null ? assetInfo.url : void 0) || (assetInfo != null ? assetInfo.type : void 0))) {
+      console.error('[UBHD3DViewerPlugin] __createMarkup: no assetInfo url or type available, aborting mount.');
       return;
     }
     if (!assetInfo.url && assetInfo.type) {
+      console.debug('[UBHD3DViewerPlugin] __createMarkup: assetInfo is pending (type set, no url yet), aborting mount for now.');
       return;
     }
+    console.debug('[UBHD3DViewerPlugin] __createMarkup: proceeding with assetInfo type=', assetInfo.type, 'url=', assetInfo.url, 'alternatives=', (assetInfo.alternatives || []).length);
     assetInfo.url = this.__sameOriginUrl(assetInfo.url);
     assetInfo.url = this.__withAccessToken(assetInfo.url);
     if (assetInfo.defaults) {
