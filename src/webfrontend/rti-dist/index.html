@@ -20,13 +20,30 @@
       const params   = new URLSearchParams(location.search);
       const accessToken = params.get('access_token');
       let assetUrl = params.get('asset');
+      let configUrl = params.get('config') || '';
       const zipName  = params.get('filename') || '';
 
       // access_token kommt als eigener, flacher Query-Parameter (siehe UBHD3DViewerPlugin.coffee)
-      // und wird hier erst vor der Verwendung wieder an die Asset-URL angehaengt.
-      if (assetUrl && accessToken && !/[?&]access_token=/.test(assetUrl)) {
-        const separator = assetUrl.includes('?') ? '&' : '?';
-        assetUrl = `${assetUrl}${separator}access_token=${encodeURIComponent(accessToken)}`;
+      // und wird hier erst vor der Verwendung wieder an die jeweilige URL angehaengt.
+      function withAccessToken(url) {
+        if (url && accessToken && !/[?&]access_token=/.test(url)) {
+          const separator = url.includes('?') ? '&' : '?';
+          return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`;
+        }
+        return url;
+      }
+      assetUrl = withAccessToken(assetUrl);
+      configUrl = withAccessToken(configUrl);
+
+      // Optionale, pro Asset hinterlegte 3D_viewer.json mit einem "rti"-Abschnitt
+      // ({ mode, light: {x,y}, camera: {x,y,z,a} }). Fehlt sie oder das Fetch schlaegt fehl,
+      // wird einfach mit den OpenLIME-Standardwerten weitergemacht (nicht fatal).
+      function loadRtiDefaults(url) {
+        if (!url) return Promise.resolve(null);
+        return fetch(url, { credentials: 'include', cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null)
+          .then(json => json && json.rti || null)
+          .catch(err => { console.warn('[UBHD3DViewer:rti] loadRtiDefaults failed', err); return null; });
       }
 
       console.debug('[UBHD3DViewer:rti] location.search=', location.search, 'zipName=', zipName, 'access_token present=', !!accessToken);
@@ -114,15 +131,45 @@
           });
       }
 
-      function initViewer(url) {
-        console.debug('[UBHD3DViewer:rti] initViewer: url=', url);
+      function initViewer(url, rtiDefaults) {
+        console.debug('[UBHD3DViewer:rti] initViewer: url=', url, 'rtiDefaults=', rtiDefaults);
         const viewer = new OpenLIME.Viewer('.openlime');
-        viewer.addLayer('rti', new OpenLIME.Layer({ type: 'rti', url, layout: 'image' }));
+        const layer = new OpenLIME.Layer({ type: 'rti', url, layout: 'image' });
+        viewer.addLayer('rti', layer);
         OpenLIME.Skin.setUrl('./skin/skin.svg');
+
+        // Default "diffuse" (gleichmaessig ausgeleuchtet) statt des interaktiven "light"-Modus,
+        // der ohne eigens gesetzte Lichtrichtung ueberlichtet wirkt. Wer explizit eine
+        // Lichtrichtung oder einen anderen Modus konfiguriert, bekommt weiterhin "light".
+        const mode = (rtiDefaults && rtiDefaults.mode) || (rtiDefaults && rtiDefaults.light ? 'light' : 'diffuse');
+
         const ui = new OpenLIME.UIBasic(viewer, { showLightDirections: true });
         ui.actions.light.active = true;
         ui.actions.zoomin.display = ui.actions.zoomout.display =
           ui.actions.fullscreen.display = ui.actions.home.display = true;
+
+        function applyDefaults() {
+          try {
+            layer.setMode(mode);
+          } catch (err) {
+            console.warn('[UBHD3DViewer:rti] setMode failed for mode=', mode, err);
+          }
+          if (rtiDefaults && rtiDefaults.light) {
+            layer.setLight([rtiDefaults.light.x || 0, rtiDefaults.light.y || 0], 0);
+          }
+          if (rtiDefaults && rtiDefaults.camera) {
+            const c = rtiDefaults.camera;
+            viewer.camera.setPosition(0, c.x || 0, c.y || 0, c.z || 1, c.a || 0);
+          }
+        }
+
+        // setMode/setLight brauchen einen initialisierten Shader; camera.setPosition soll erst
+        // nach OpenLIMEs eigenem Autofit (canvas 'ready') greifen, sonst wird es ueberschrieben.
+        if (layer.status === 'ready') {
+          applyDefaults();
+        } else {
+          layer.addEvent('ready', applyDefaults);
+        }
       }
 
       // OpenLIME erwartet an dieser URL ein Web-RTI-Manifest (info.json) und parst dessen Inhalt
@@ -145,8 +192,11 @@
           });
       }
 
-      (isRtiZip(assetUrl, zipName) ? loadFromZip(assetUrl, zipName) : validateInfoJson(assetUrl))
-        .then(initViewer)
+      Promise.all([
+        isRtiZip(assetUrl, zipName) ? loadFromZip(assetUrl, zipName) : validateInfoJson(assetUrl),
+        loadRtiDefaults(configUrl)
+      ])
+        .then(([url, rtiDefaults]) => initViewer(url, rtiDefaults))
         .catch(err => showError(err && err.message ? err.message : String(err)));
     })();
   </script>
